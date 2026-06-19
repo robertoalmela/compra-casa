@@ -5,7 +5,8 @@ const state = {
   filter: 'all',
   household: null,
   members: [],
-  items: [],
+  products: [],
+  events: [],
   activeMemberId: null,
   supabase: null,
   channel: null,
@@ -20,11 +21,14 @@ const itemNotes = document.getElementById('itemNotes');
 const itemsList = document.getElementById('itemsList');
 const listMeta = document.getElementById('listMeta');
 const pendingCount = document.getElementById('pendingCount');
-const doneCount = document.getElementById('doneCount');
+const stockCount = document.getElementById('stockCount');
+const netBalance = document.getElementById('netBalance');
 const filters = document.getElementById('filters');
-const clearDoneBtn = document.getElementById('clearDoneBtn');
 const itemTemplate = document.getElementById('itemTemplate');
 const statusBanner = document.getElementById('statusBanner');
+const suggestionsList = document.getElementById('suggestionsList');
+const balancesList = document.getElementById('balancesList');
+const eventsList = document.getElementById('eventsList');
 
 function setStatus(message, tone = 'info') {
   statusBanner.textContent = message;
@@ -40,14 +44,123 @@ function hasValidConfig() {
   );
 }
 
+function formatCurrencyFromCents(cents) {
+  if (cents == null || Number.isNaN(Number(cents))) return '—';
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(cents) / 100);
+}
+
+function formatDate(value) {
+  if (!value) return 'sin fecha';
+  return new Date(value).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
+}
+
+function differenceInDays(a, b) {
+  const ms = Math.abs(new Date(a).getTime() - new Date(b).getTime());
+  return ms / (1000 * 60 * 60 * 24);
+}
+
+function round1(value) {
+  return Math.round(value * 10) / 10;
+}
+
 function getActiveMember() {
   return state.members.find((member) => member.id === state.activeMemberId) || state.members[0] || null;
 }
 
-function filteredItems() {
-  if (state.filter === 'pending') return state.items.filter((item) => !item.isDone);
-  if (state.filter === 'done') return state.items.filter((item) => item.isDone);
-  return state.items;
+function getMemberName(memberId) {
+  return state.members.find((member) => member.id === memberId)?.name || 'Sin registrar';
+}
+
+function getProductEvents(productId) {
+  return state.events
+    .filter((event) => event.productId === productId)
+    .slice()
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+}
+
+function parsePriceToCents(raw) {
+  if (!raw) return null;
+  const normalized = raw.replace(',', '.').replace(/[^\d.]/g, '');
+  const amount = Number.parseFloat(normalized);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  return Math.round(amount * 100);
+}
+
+function filteredProducts() {
+  const visible = state.products.filter((product) => {
+    if (state.filter === 'needed') return product.isNeeded && !product.isArchived;
+    if (state.filter === 'stock') return !product.isNeeded && !product.isArchived;
+    if (state.filter === 'archived') return product.isArchived;
+    return !product.isArchived;
+  });
+
+  return visible.sort((a, b) => {
+    if (a.isArchived !== b.isArchived) return Number(a.isArchived) - Number(b.isArchived);
+    if (a.isNeeded !== b.isNeeded) return Number(b.isNeeded) - Number(a.isNeeded);
+    return new Date(b.updatedAt) - new Date(a.updatedAt);
+  });
+}
+
+function getConsumptionMetrics(product) {
+  const events = getProductEvents(product.id);
+  const consumed = events.filter((event) => event.type === 'consumed');
+  const intervals = [];
+
+  for (let i = 1; i < consumed.length; i += 1) {
+    intervals.push(differenceInDays(consumed[i].createdAt, consumed[i - 1].createdAt));
+  }
+
+  if (!intervals.length && consumed.length === 1 && product.lastBoughtAt) {
+    intervals.push(differenceInDays(consumed[0].createdAt, product.lastBoughtAt));
+  }
+
+  const avgDays = intervals.length ? intervals.reduce((sum, value) => sum + value, 0) / intervals.length : null;
+  const referenceDate = product.lastConsumedAt || product.lastBoughtAt || product.createdAt;
+  const daysSinceReference = referenceDate ? differenceInDays(new Date().toISOString(), referenceDate) : null;
+
+  let suggestion = 'Sin datos todavía';
+  let urgency = 0;
+
+  if (product.isNeeded) {
+    suggestion = 'Hace falta reponerlo';
+    urgency = 3;
+  } else if (avgDays && daysSinceReference != null) {
+    if (daysSinceReference >= avgDays * 0.8) {
+      suggestion = `Suele durar ~${round1(avgDays)} días · toca comprar pronto`;
+      urgency = 2;
+    } else {
+      suggestion = `Suele durar ~${round1(avgDays)} días`;
+      urgency = 1;
+    }
+  } else if (!product.isNeeded) {
+    suggestion = 'Aún no hay historial suficiente';
+  }
+
+  return {
+    avgDays,
+    daysSinceReference,
+    suggestion,
+    urgency,
+  };
+}
+
+function computeBalances() {
+  const balances = Object.fromEntries(state.members.map((member) => [member.id, 0]));
+  const purchaseEvents = state.events.filter((event) => event.type === 'bought' && event.amountCents > 0 && event.memberId);
+
+  purchaseEvents.forEach((event) => {
+    const share = event.amountCents / Math.max(state.members.length, 1);
+    state.members.forEach((member) => {
+      balances[member.id] -= share;
+    });
+    balances[event.memberId] += event.amountCents;
+  });
+
+  return state.members.map((member) => ({
+    id: member.id,
+    name: member.name,
+    cents: Math.round(balances[member.id] || 0),
+  }));
 }
 
 function renderMembers() {
@@ -81,47 +194,147 @@ function renderFilters() {
 }
 
 function renderStats() {
-  const pending = state.items.filter((item) => !item.isDone).length;
-  const done = state.items.filter((item) => item.isDone).length;
+  const pending = state.products.filter((product) => product.isNeeded && !product.isArchived).length;
+  const stock = state.products.filter((product) => !product.isNeeded && !product.isArchived).length;
+  const balances = computeBalances();
+  const activeBalance = balances.find((entry) => entry.id === state.activeMemberId);
   const activeMember = getActiveMember();
+
   pendingCount.textContent = pending;
-  doneCount.textContent = done;
+  stockCount.textContent = stock;
+  netBalance.textContent = activeBalance ? formatCurrencyFromCents(activeBalance.cents) : '0 €';
   listMeta.textContent = state.household
-    ? `${state.items.length} productos · casa: ${state.household.name} · activo: ${activeMember ? activeMember.name : 'nadie'}`
+    ? `${state.products.filter((product) => !product.isArchived).length} productos · casa: ${state.household.name} · activo: ${activeMember ? activeMember.name : 'nadie'}`
     : 'Sin hogar cargado';
 }
 
-function renderItems() {
-  itemsList.innerHTML = '';
-  const items = filteredItems()
-    .slice()
-    .sort((a, b) => Number(a.isDone) - Number(b.isDone) || b.createdAt.localeCompare(a.createdAt));
+function renderSuggestions() {
+  suggestionsList.innerHTML = '';
+  const cards = state.products
+    .filter((product) => !product.isArchived)
+    .map((product) => ({ product, metrics: getConsumptionMetrics(product) }))
+    .sort((a, b) => b.metrics.urgency - a.metrics.urgency || a.product.name.localeCompare(b.product.name))
+    .slice(0, 6);
 
-  if (!items.length) {
+  if (!cards.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = 'No hay productos en este filtro. Añade uno arriba.';
+    empty.textContent = 'Añade productos y ve marcando compras/gastos para aprender ritmos.';
+    suggestionsList.appendChild(empty);
+    return;
+  }
+
+  cards.forEach(({ product, metrics }) => {
+    const card = document.createElement('article');
+    card.className = 'mini-card';
+    card.innerHTML = `
+      <strong>${product.name}</strong>
+      <span>${metrics.suggestion}</span>
+      <small>Último precio: ${formatCurrencyFromCents(product.lastPriceCents)}</small>
+    `;
+    suggestionsList.appendChild(card);
+  });
+}
+
+function renderBalances() {
+  balancesList.innerHTML = '';
+  const balances = computeBalances().sort((a, b) => b.cents - a.cents);
+
+  if (!balances.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'Sin miembros ni gastos todavía.';
+    balancesList.appendChild(empty);
+    return;
+  }
+
+  balances.forEach((entry) => {
+    const card = document.createElement('article');
+    card.className = `mini-card ${entry.cents >= 0 ? 'positive' : 'negative'}`;
+    const label = entry.cents >= 0 ? 'ha adelantado' : 'debe';
+    card.innerHTML = `
+      <strong>${entry.name}</strong>
+      <span>${label}</span>
+      <small>${formatCurrencyFromCents(Math.abs(entry.cents))}</small>
+    `;
+    balancesList.appendChild(card);
+  });
+}
+
+function renderEvents() {
+  eventsList.innerHTML = '';
+  const latest = state.events.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 8);
+
+  if (!latest.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'Aquí saldrán compras y consumos recientes.';
+    eventsList.appendChild(empty);
+    return;
+  }
+
+  latest.forEach((event) => {
+    const card = document.createElement('article');
+    card.className = 'mini-card';
+    const amount = event.amountCents ? ` · ${formatCurrencyFromCents(event.amountCents)}` : '';
+    card.innerHTML = `
+      <strong>${event.productName}</strong>
+      <span>${event.label} · ${event.memberName} · ${formatDate(event.createdAt)}${amount}</span>
+      <small>${event.notes || 'sin notas'}</small>
+    `;
+    eventsList.appendChild(card);
+  });
+}
+
+function renderProducts() {
+  itemsList.innerHTML = '';
+  const products = filteredProducts();
+
+  if (!products.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'No hay productos en este filtro.';
     itemsList.appendChild(empty);
     return;
   }
 
-  items.forEach((item) => {
+  products.forEach((product) => {
+    const metrics = getConsumptionMetrics(product);
     const node = itemTemplate.content.firstElementChild.cloneNode(true);
-    node.classList.toggle('is-done', item.isDone);
-    node.querySelector('.item-name').textContent = item.name;
-    node.querySelector('.item-category').textContent = item.category;
-    node.querySelector('.item-notes').textContent = item.notes || 'Sin notas';
-    node.querySelector('.qty-pill').textContent = item.qty || 'Cantidad libre';
-    node.querySelector('.by-pill').textContent = item.isDone
-      ? `Compró: ${item.boughtByName || 'Sin registrar'}`
-      : 'Pendiente';
-    node.querySelector('.added-pill').textContent = `Añadió: ${item.addedByName || 'Sin registrar'}`;
+    node.classList.toggle('is-done', !product.isNeeded && !product.isArchived);
+    node.querySelector('.item-name').textContent = product.name;
+    node.querySelector('.item-category').textContent = product.category;
+    node.querySelector('.item-notes').textContent = product.notes || 'Sin notas';
+    node.querySelector('.qty-pill').textContent = product.qtyLabel || 'Cantidad libre';
+    node.querySelector('.price-pill').textContent = `Último precio: ${formatCurrencyFromCents(product.lastPriceCents)}`;
+    node.querySelector('.by-pill').textContent = product.isNeeded
+      ? `Último gasto: ${product.lastConsumedByName || '—'}`
+      : `Última compra: ${product.lastBoughtByName || '—'}`;
+    node.querySelector('.item-suggestion').textContent = metrics.suggestion;
 
-    const checkbox = node.querySelector('.item-check');
-    checkbox.checked = item.isDone;
-    checkbox.addEventListener('change', () => toggleItem(item.id, checkbox.checked));
+    const statePill = node.querySelector('.state-pill');
+    statePill.textContent = product.isArchived ? 'Archivado' : product.isNeeded ? 'Comprar' : 'En casa';
+    statePill.className = `state-pill ${product.isArchived ? 'archived' : product.isNeeded ? 'needed' : 'stocked'}`;
 
-    node.querySelector('.delete-btn').addEventListener('click', () => deleteItem(item.id));
+    const actionBtn = node.querySelector('.action-btn');
+    const archiveBtn = node.querySelector('.archive-btn');
+
+    if (product.isArchived) {
+      actionBtn.textContent = 'Reactivar';
+      actionBtn.addEventListener('click', () => unarchiveProduct(product.id));
+      archiveBtn.textContent = 'Oculto';
+      archiveBtn.disabled = true;
+    } else if (product.isNeeded) {
+      actionBtn.textContent = 'Comprar ahora';
+      actionBtn.addEventListener('click', () => buyProduct(product));
+      archiveBtn.textContent = 'Archivar';
+      archiveBtn.addEventListener('click', () => archiveProduct(product.id));
+    } else {
+      actionBtn.textContent = 'Se ha gastado';
+      actionBtn.addEventListener('click', () => consumeProduct(product));
+      archiveBtn.textContent = 'Archivar';
+      archiveBtn.addEventListener('click', () => archiveProduct(product.id));
+    }
 
     itemsList.appendChild(node);
   });
@@ -131,7 +344,10 @@ function render() {
   renderMembers();
   renderFilters();
   renderStats();
-  renderItems();
+  renderSuggestions();
+  renderBalances();
+  renderEvents();
+  renderProducts();
 }
 
 async function ensureHousehold() {
@@ -176,58 +392,108 @@ async function ensureMembers() {
       display_name,
     }));
 
-    const { data: inserted, error: insertError } = await state.supabase
-      .from('members')
-      .insert(seedMembers)
-      .select('id, display_name')
-      .order('created_at', { ascending: true });
-
+    const { data: inserted, error: insertError } = await state.supabase.from('members').insert(seedMembers).select('id, display_name');
     if (insertError) throw insertError;
     members = inserted || [];
   }
 
-  state.members = members.map((member) => ({
-    id: member.id,
-    name: member.display_name,
-  }));
-
+  state.members = members.map((member) => ({ id: member.id, name: member.display_name }));
   if (!state.activeMemberId || !state.members.some((member) => member.id === state.activeMemberId)) {
     state.activeMemberId = state.members[0]?.id || null;
   }
 }
 
-async function loadItems() {
+async function loadProducts() {
   const { data, error } = await state.supabase
-    .from('shopping_items')
-    .select(
-      `
-        id,
-        name,
-        qty,
-        category,
-        notes,
-        is_done,
-        created_at,
-        added_by:members!shopping_items_added_by_member_id_fkey(display_name),
-        bought_by:members!shopping_items_bought_by_member_id_fkey(display_name)
-      `
-    )
+    .from('shopping_products')
+    .select(`
+      id,
+      name,
+      qty_label,
+      category,
+      notes,
+      is_needed,
+      is_archived,
+      last_price_cents,
+      created_at,
+      updated_at,
+      last_bought_at,
+      last_consumed_at,
+      last_bought_by:members!shopping_products_last_bought_by_member_id_fkey(display_name),
+      last_consumed_by:members!shopping_products_last_consumed_by_member_id_fkey(display_name)
+    `)
     .eq('household_id', state.household.id)
-    .order('created_at', { ascending: false });
+    .order('updated_at', { ascending: false });
 
   if (error) throw error;
 
-  state.items = (data || []).map((item) => ({
-    id: item.id,
-    name: item.name,
-    qty: item.qty || '',
-    category: item.category || 'General',
-    notes: item.notes || '',
-    isDone: Boolean(item.is_done),
-    createdAt: item.created_at,
-    addedByName: item.added_by?.display_name || '',
-    boughtByName: item.bought_by?.display_name || '',
+  state.products = (data || []).map((product) => ({
+    id: product.id,
+    name: product.name,
+    qtyLabel: product.qty_label || '',
+    category: product.category || 'General',
+    notes: product.notes || '',
+    isNeeded: Boolean(product.is_needed),
+    isArchived: Boolean(product.is_archived),
+    lastPriceCents: product.last_price_cents,
+    createdAt: product.created_at,
+    updatedAt: product.updated_at,
+    lastBoughtAt: product.last_bought_at,
+    lastConsumedAt: product.last_consumed_at,
+    lastBoughtByName: product.last_bought_by?.display_name || '',
+    lastConsumedByName: product.last_consumed_by?.display_name || '',
   }));
+}
+
+function eventLabel(type) {
+  return {
+    created: 'creado',
+    bought: 'comprado',
+    consumed: 'gastado',
+    needed: 'marcado como pendiente',
+    archived: 'archivado',
+    unarchived: 'reactivado',
+  }[type] || type;
+}
+
+async function loadEvents() {
+  const { data, error } = await state.supabase
+    .from('shopping_events')
+    .select(`
+      id,
+      product_id,
+      member_id,
+      event_type,
+      amount_cents,
+      notes,
+      created_at,
+      product:shopping_products!shopping_events_product_id_fkey(name),
+      member:members!shopping_events_member_id_fkey(display_name)
+    `)
+    .eq('household_id', state.household.id)
+    .order('created_at', { ascending: false })
+    .limit(400);
+
+  if (error) throw error;
+
+  state.events = (data || []).map((event) => ({
+    id: event.id,
+    productId: event.product_id,
+    memberId: event.member_id,
+    type: event.event_type,
+    amountCents: event.amount_cents,
+    notes: event.notes || '',
+    createdAt: event.created_at,
+    productName: event.product?.name || 'Producto',
+    memberName: event.member?.display_name || 'Sin registrar',
+    label: eventLabel(event.event_type),
+  }));
+}
+
+async function refreshAll() {
+  await ensureMembers();
+  await Promise.all([loadProducts(), loadEvents()]);
+  render();
 }
 
 async function addItem(event) {
@@ -236,102 +502,170 @@ async function addItem(event) {
   const name = itemName.value.trim();
   if (!name || !activeMember) return;
 
-  setStatus('Guardando producto…', 'info');
+  setStatus('Creando producto…', 'info');
 
-  const { error } = await state.supabase.from('shopping_items').insert({
-    household_id: state.household.id,
-    name,
-    qty: itemQty.value.trim(),
-    category: itemCategory.value,
-    notes: itemNotes.value.trim(),
-    added_by_member_id: activeMember.id,
-  });
+  const { data: inserted, error } = await state.supabase
+    .from('shopping_products')
+    .insert({
+      household_id: state.household.id,
+      name,
+      qty_label: itemQty.value.trim(),
+      category: itemCategory.value,
+      notes: itemNotes.value.trim(),
+      is_needed: true,
+      created_by_member_id: activeMember.id,
+    })
+    .select('id, name')
+    .single();
 
   if (error) {
     setStatus(`Error al guardar: ${error.message}`, 'error');
     return;
   }
 
+  await state.supabase.from('shopping_events').insert({
+    household_id: state.household.id,
+    product_id: inserted.id,
+    member_id: activeMember.id,
+    event_type: 'created',
+    notes: 'Producto creado',
+  });
+
   itemForm.reset();
   itemCategory.value = 'General';
   itemName.focus();
-  setStatus('Producto añadido.', 'success');
-  await loadItems();
-  render();
+  await refreshAll();
+  setStatus('Producto creado y añadido al stock reutilizable.', 'success');
 }
 
-async function toggleItem(itemId, checked) {
+async function buyProduct(product) {
   const activeMember = getActiveMember();
   if (!activeMember) return;
 
+  const rawPrice = window.prompt(`¿Cuánto costó ${product.name}?`, product.lastPriceCents ? String(product.lastPriceCents / 100) : '');
+  if (rawPrice === null) return;
+  const amountCents = parsePriceToCents(rawPrice);
+  if (amountCents == null) {
+    setStatus('Precio inválido. Usa por ejemplo 2,35', 'warning');
+    return;
+  }
+
+  const note = window.prompt('¿Alguna nota de compra? (opcional)', '') ?? '';
+
   const { error } = await state.supabase
-    .from('shopping_items')
+    .from('shopping_products')
     .update({
-      is_done: checked,
-      bought_by_member_id: checked ? activeMember.id : null,
+      is_needed: false,
+      last_price_cents: amountCents,
+      last_bought_by_member_id: activeMember.id,
+      last_bought_at: new Date().toISOString(),
     })
-    .eq('id', itemId);
+    .eq('id', product.id);
 
   if (error) {
-    setStatus(`Error al actualizar: ${error.message}`, 'error');
+    setStatus(`Error al marcar compra: ${error.message}`, 'error');
     return;
   }
 
-  setStatus(checked ? 'Marcado como comprado.' : 'Marcado como pendiente.', 'success');
-  await loadItems();
-  render();
+  await state.supabase.from('shopping_events').insert({
+    household_id: state.household.id,
+    product_id: product.id,
+    member_id: activeMember.id,
+    event_type: 'bought',
+    amount_cents: amountCents,
+    notes: note,
+  });
+
+  await refreshAll();
+  setStatus(`Compra guardada. ${product.name} ya está en casa y el gasto entra en balance.`, 'success');
 }
 
-async function deleteItem(itemId) {
-  const { error } = await state.supabase.from('shopping_items').delete().eq('id', itemId);
+async function consumeProduct(product) {
+  const activeMember = getActiveMember();
+  if (!activeMember) return;
+  const note = window.prompt(`¿Se ha gastado ${product.name}? Nota opcional`, '') ?? '';
 
-  if (error) {
-    setStatus(`Error al borrar: ${error.message}`, 'error');
-    return;
-  }
-
-  setStatus('Producto eliminado.', 'success');
-  await loadItems();
-  render();
-}
-
-async function clearDone() {
   const { error } = await state.supabase
-    .from('shopping_items')
-    .delete()
-    .eq('household_id', state.household.id)
-    .eq('is_done', true);
+    .from('shopping_products')
+    .update({
+      is_needed: true,
+      last_consumed_by_member_id: activeMember.id,
+      last_consumed_at: new Date().toISOString(),
+    })
+    .eq('id', product.id);
 
   if (error) {
-    setStatus(`Error al limpiar: ${error.message}`, 'error');
+    setStatus(`Error al marcar consumo: ${error.message}`, 'error');
     return;
   }
 
-  setStatus('Comprados eliminados.', 'success');
-  await loadItems();
-  render();
+  await state.supabase.from('shopping_events').insert({
+    household_id: state.household.id,
+    product_id: product.id,
+    member_id: activeMember.id,
+    event_type: 'consumed',
+    notes: note,
+  });
+
+  await refreshAll();
+  setStatus(`${product.name} vuelve a pendiente para la próxima compra.`, 'success');
+}
+
+async function archiveProduct(productId) {
+  const activeMember = getActiveMember();
+  const { error } = await state.supabase.from('shopping_products').update({ is_archived: true }).eq('id', productId);
+  if (error) {
+    setStatus(`Error al archivar: ${error.message}`, 'error');
+    return;
+  }
+  await state.supabase.from('shopping_events').insert({
+    household_id: state.household.id,
+    product_id: productId,
+    member_id: activeMember?.id || null,
+    event_type: 'archived',
+  });
+  await refreshAll();
+  setStatus('Producto archivado.', 'success');
+}
+
+async function unarchiveProduct(productId) {
+  const activeMember = getActiveMember();
+  const { error } = await state.supabase.from('shopping_products').update({ is_archived: false }).eq('id', productId);
+  if (error) {
+    setStatus(`Error al reactivar: ${error.message}`, 'error');
+    return;
+  }
+  await state.supabase.from('shopping_events').insert({
+    household_id: state.household.id,
+    product_id: productId,
+    member_id: activeMember?.id || null,
+    event_type: 'unarchived',
+  });
+  await refreshAll();
+  setStatus('Producto reactivado.', 'success');
 }
 
 function setupRealtime() {
-  if (state.channel) {
-    state.supabase.removeChannel(state.channel);
-  }
+  if (state.channel) state.supabase.removeChannel(state.channel);
 
   state.channel = state.supabase
-    .channel(`shopping-items-${state.household.id}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'shopping_items',
-        filter: `household_id=eq.${state.household.id}`,
-      },
-      async () => {
-        await loadItems();
-        render();
-      }
-    )
+    .channel(`shopping-stock-${state.household.id}`)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'shopping_products',
+      filter: `household_id=eq.${state.household.id}`,
+    }, async () => {
+      await refreshAll();
+    })
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'shopping_events',
+      filter: `household_id=eq.${state.household.id}`,
+    }, async () => {
+      await refreshAll();
+    })
     .subscribe();
 }
 
@@ -340,31 +674,32 @@ function bindEvents() {
     const button = event.target.closest('.filter');
     if (!button) return;
     state.filter = button.dataset.filter;
-    render();
+    renderProducts();
+    renderFilters();
   });
 
   itemForm.addEventListener('submit', (event) => {
     addItem(event).catch((error) => setStatus(`Error al guardar: ${error.message}`, 'error'));
-  });
-
-  clearDoneBtn.addEventListener('click', () => {
-    clearDone().catch((error) => setStatus(`Error al limpiar: ${error.message}`, 'error'));
   });
 }
 
 function renderConfigHelp() {
   memberPicker.innerHTML = '';
   itemsList.innerHTML = '';
+  suggestionsList.innerHTML = '';
+  balancesList.innerHTML = '';
+  eventsList.innerHTML = '';
   listMeta.textContent = 'Falta conectar Supabase';
   pendingCount.textContent = '—';
-  doneCount.textContent = '—';
+  stockCount.textContent = '—';
+  netBalance.textContent = '—';
 
   const empty = document.createElement('div');
   empty.className = 'empty-state';
-  empty.innerHTML = 'Rellena <strong>config.js</strong> con tu <strong>Supabase URL</strong> y tu <strong>anon key</strong> pública.';
+  empty.innerHTML = 'Rellena <strong>config.js</strong> con tu <strong>Supabase URL</strong> y tu <strong>anon key</strong> pública. Luego ejecuta <strong>supabase/schema.sql</strong>.';
   itemsList.appendChild(empty);
 
-  setStatus('Configura Supabase en config.js para salir del modo demo sin base de datos.', 'warning');
+  setStatus('Configura Supabase en config.js para activar stock, historial y balances reales.', 'warning');
 }
 
 async function bootstrap() {
@@ -379,10 +714,8 @@ async function bootstrap() {
     setStatus('Conectando con Supabase…', 'info');
     state.supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
     await ensureHousehold();
-    await ensureMembers();
-    await loadItems();
+    await refreshAll();
     setupRealtime();
-    render();
     setStatus(`Conectado a ${state.household.name}.`, 'success');
   } catch (error) {
     console.error(error);

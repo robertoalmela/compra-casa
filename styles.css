@@ -378,13 +378,91 @@ button:hover {
   transform: translateY(-1px);
 }
 
+.layout-wide {
+  grid-template-columns: 1fr;
+}
+
+.subpanel,
+.side-panel {
+  margin-top: 18px;
+}
+
+.stack-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.mini-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.04);
+}
+
+.mini-card strong {
+  font-size: 0.95rem;
+}
+
+.mini-card span,
+.mini-card small {
+  color: var(--muted);
+}
+
+.mini-card.positive {
+  background: rgba(115, 240, 172, 0.08);
+}
+
+.mini-card.negative {
+  background: rgba(255, 123, 114, 0.08);
+}
+
+.item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.state-pill.needed {
+  background: rgba(255, 213, 79, 0.14);
+  color: #ffe7a0;
+}
+
+.state-pill.stocked {
+  background: rgba(115, 240, 172, 0.12);
+  color: #dff8ea;
+}
+
+.state-pill.archived {
+  background: rgba(154, 176, 186, 0.14);
+  color: #d7e2e7;
+}
+
+.item-suggestion {
+  margin: 10px 0 0;
+  color: #d9f6e7;
+  font-size: 0.9rem;
+}
+
 @media (min-width: 840px) {
   body {
     padding: 28px;
   }
 
-  .layout {
-    grid-template-columns: 360px 1fr;
+  .layout-wide {
+    grid-template-columns: 340px minmax(0, 1fr) 300px;
     align-items: start;
   }
 
@@ -395,5 +473,10 @@ button:hover {
 
   .row.two-cols {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .side-panel,
+  .subpanel {
+    margin-top: 0;
   }
 }

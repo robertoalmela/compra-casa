@@ -1,66 +1,66 @@
-# Shared Shopping List MVP
+# Compra Casa
 
-MVP web/PWA para lista de la compra compartida entre familia.
+PWA/web app gratis para lista de la compra compartida entre Android y iPhone.
 
-## Objetivo
-Resolver el caso real de Roberto:
-- Android + iPhone
-- gratis
-- lista compartida
-- marcar comprado
-- saber quién lo compró
-- interfaz simple y agradable
+## Qué hace ahora
+- productos reutilizables: no se borran al comprarlos
+- estado doble: `Comprar` / `En casa`
+- cuando algo se gasta, vuelve a pendiente
+- historial real de eventos (`created`, `bought`, `consumed`, `archived`)
+- precio al comprar
+- balance compartido tipo Tricount repartido entre todos los miembros
+- sugerencias simples de reposición según ritmo medio de consumo
+- realtime con Supabase
+- frontend estático compatible con GitHub Pages
 
-## Stack actual
-- HTML
-- CSS
-- JavaScript vanilla
-- Supabase (base de datos + realtime)
-- GitHub Pages para publicar el frontend
+## Stack
+- HTML + CSS + JavaScript vanilla
+- Supabase (DB + realtime)
+- GitHub Pages (frontend)
 
-## Estado actual
-Esta versión ya no usa `localStorage` como fuente principal.
-La lista está pensada para vivir en Supabase y compartirse entre varios móviles.
+## Modelo de datos
+### `households`
+Un hogar compartido identificado por `invite_code`.
 
-### Ya soporta
-- crear hogar automáticamente por `invite_code`
-- crear miembros por defecto
-- seleccionar usuario activo
-- crear productos
-- asignar cantidad/categoría/notas
-- marcar comprado
-- registrar quién compró
-- borrar productos
-- limpiar comprados
-- refresco realtime con Supabase
-- responsive mobile-first
-- instalable como PWA básica
-- despliegue preparado para GitHub Pages
+### `members`
+Miembros de ese hogar.
 
-### Aún falta para dejarla 100% lista
-- poner la URL real de Supabase y la anon key pública en `config.js`
-- ejecutar `supabase/schema.sql` en el SQL editor
-- hacer el primer push a GitHub y activar Pages
+### `shopping_products`
+Catálogo vivo de productos de casa.
+Campos clave:
+- `is_needed`: si toca comprarlo ahora
+- `is_archived`: ocultarlo sin perder historial
+- `last_price_cents`
+- `last_bought_at`, `last_consumed_at`
+- `last_bought_by_member_id`, `last_consumed_by_member_id`
 
-## Archivos clave
-- `index.html`
-- `styles.css`
-- `app.js`
-- `config.js`
-- `config.example.js`
-- `supabase/schema.sql`
-- `.github/workflows/deploy-pages.yml`
-- `GITHUB_PAGES.md`
+### `shopping_events`
+Libro de eventos del producto.
+Tipos actuales:
+- `created`
+- `bought`
+- `consumed`
+- `needed`
+- `archived`
+- `unarchived`
 
-## Configuración rápida
+Con esto el frontend puede calcular:
+- quién adelantó más dinero
+- quién debe más
+- cuánto suele durar cada producto
+- qué conviene reponer pronto
+
+## Cómo configurarlo
 1. Crear proyecto en Supabase.
-2. Abrir SQL Editor y pegar `supabase/schema.sql`.
-3. Copiar `config.example.js` a `config.js` y rellenar:
+2. Ejecutar entero `supabase/schema.sql` en el SQL editor.
+3. Copiar `config.example.js` a `config.js`.
+4. Rellenar:
    - `supabaseUrl`
    - `supabaseAnonKey`
    - `householdInviteCode`
-4. Subir el repo a GitHub.
-5. Activar GitHub Pages.
+   - `householdName`
+   - `defaultMembers`
+5. Levantar local o publicar en GitHub Pages.
 
 ## Ejecutar local
 ```bash
@@ -68,11 +68,10 @@ cd /home/roberto/shared-shopping-list-app
 python3 -m http.server 8137
 ```
 
-Abrir: http://localhost:8137
+Abrir: http://127.0.0.1:8137/
 
-## Nota de producto
-Para este caso familiar, GitHub Pages + Supabase es la opción más limpia:
-- sin app nativa
-- sin backend propio
-- sin costes al inicio
-- fácil de compartir con hermanos
+## Notas de producto
+- El balance reparte cada compra a partes iguales entre todos los miembros actuales.
+- La predicción de reposición es una heurística local en JS, no IA externa.
+- Si vienes de la versión anterior, hay cambio de esquema: aplica `supabase/schema.sql` antes de usar esta versión.
+- GitHub Pages sigue valiendo porque todo lo dinámico vive en Supabase.

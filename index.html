@@ -14,24 +14,28 @@
       <header class="hero">
         <div>
           <p class="eyebrow">Casa</p>
-          <h1>Compra compartida</h1>
-          <p class="subtitle">Añade, tacha y deja claro quién compró qué. Base de datos real, sin copias separadas por móvil.</p>
+          <h1>Stock compartido</h1>
+          <p class="subtitle">No es una lista de usar y tirar: los productos viven siempre, aprenden su ritmo de consumo y reparten gastos entre hermanos.</p>
         </div>
         <div class="hero-stats">
           <div class="stat-card">
-            <span class="stat-label">Pendientes</span>
+            <span class="stat-label">Por comprar</span>
             <strong id="pendingCount">0</strong>
           </div>
           <div class="stat-card success">
-            <span class="stat-label">Comprados</span>
-            <strong id="doneCount">0</strong>
+            <span class="stat-label">En casa</span>
+            <strong id="stockCount">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Saldo neto</span>
+            <strong id="netBalance">0 €</strong>
           </div>
         </div>
       </header>
 
       <div id="statusBanner" class="status-banner is-info">Cargando app…</div>
 
-      <main class="layout">
+      <main class="layout layout-wide">
         <section class="panel controls-panel">
           <div class="section-head">
             <h2>Quién eres</h2>
@@ -41,12 +45,12 @@
 
           <div class="section-head add-head">
             <h2>Añadir producto</h2>
-            <span class="section-hint">Rápido y claro</span>
+            <span class="section-hint">Base permanente</span>
           </div>
           <form id="itemForm" class="item-form">
             <input id="itemName" name="name" type="text" placeholder="Ej. leche" required maxlength="80" />
             <div class="row two-cols">
-              <input id="itemQty" name="qty" type="text" placeholder="Cantidad" maxlength="20" />
+              <input id="itemQty" name="qty" type="text" placeholder="Cantidad habitual" maxlength="20" />
               <select id="itemCategory" name="category">
                 <option value="General">General</option>
                 <option value="Frescos">Frescos</option>
@@ -57,22 +61,44 @@
               </select>
             </div>
             <textarea id="itemNotes" name="notes" rows="3" placeholder="Marca, detalles o notas"></textarea>
-            <button type="submit" class="primary-btn">Añadir a la lista</button>
+            <button type="submit" class="primary-btn">Crear producto</button>
           </form>
+
+          <section class="subpanel">
+            <div class="section-head">
+              <h2>Reposición inteligente</h2>
+              <span class="section-hint">Heurística simple</span>
+            </div>
+            <div id="suggestionsList" class="stack-list"></div>
+          </section>
         </section>
 
         <section class="panel list-panel">
           <div class="toolbar">
             <div class="filters" id="filters">
               <button type="button" class="filter is-active" data-filter="all">Todo</button>
-              <button type="button" class="filter" data-filter="pending">Pendiente</button>
-              <button type="button" class="filter" data-filter="done">Comprado</button>
+              <button type="button" class="filter" data-filter="needed">Comprar</button>
+              <button type="button" class="filter" data-filter="stock">En casa</button>
+              <button type="button" class="filter" data-filter="archived">Archivados</button>
             </div>
-            <button id="clearDoneBtn" type="button" class="ghost-btn">Limpiar comprados</button>
           </div>
 
           <div id="listMeta" class="list-meta"></div>
           <div id="itemsList" class="items-list"></div>
+        </section>
+
+        <section class="panel side-panel">
+          <div class="section-head">
+            <h2>Balance casa</h2>
+            <span class="section-hint">Tipo Tricount</span>
+          </div>
+          <div id="balancesList" class="stack-list"></div>
+
+          <div class="section-head add-head">
+            <h2>Últimos movimientos</h2>
+            <span class="section-hint">Compras y consumo</span>
+          </div>
+          <div id="eventsList" class="stack-list"></div>
         </section>
       </main>
     </div>
@@ -80,24 +106,25 @@
     <template id="itemTemplate">
       <article class="item-card">
         <div class="item-main">
-          <label class="check-wrap">
-            <input type="checkbox" class="item-check" />
-            <span class="custom-check"></span>
-          </label>
           <div class="item-copy">
             <div class="item-title-row">
               <h3 class="item-name"></h3>
               <span class="item-category"></span>
+              <span class="state-pill"></span>
             </div>
             <p class="item-notes"></p>
             <div class="item-meta-row">
               <span class="pill qty-pill"></span>
+              <span class="pill price-pill"></span>
               <span class="pill by-pill"></span>
-              <span class="pill added-pill"></span>
             </div>
+            <p class="item-suggestion"></p>
           </div>
         </div>
-        <button class="delete-btn" title="Eliminar" type="button">×</button>
+        <div class="item-actions">
+          <button class="ghost-btn action-btn" type="button"></button>
+          <button class="ghost-btn archive-btn" type="button"></button>
+        </div>
       </article>
     </template>
 
