@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Compra Casa</title>
+    <meta name="theme-color" content="#10212b" />
+    <meta name="description" content="Lista de la compra compartida para casa" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Casa</p>
+          <h1>Compra compartida</h1>
+          <p class="subtitle">Añade, tacha y deja claro quién compró qué. Base de datos real, sin copias separadas por móvil.</p>
+        </div>
+        <div class="hero-stats">
+          <div class="stat-card">
+            <span class="stat-label">Pendientes</span>
+            <strong id="pendingCount">0</strong>
+          </div>
+          <div class="stat-card success">
+            <span class="stat-label">Comprados</span>
+            <strong id="doneCount">0</strong>
+          </div>
+        </div>
+      </header>
+
+      <div id="statusBanner" class="status-banner is-info">Cargando app…</div>
+
+      <main class="layout">
+        <section class="panel controls-panel">
+          <div class="section-head">
+            <h2>Quién eres</h2>
+            <span class="section-hint">Usuario activo</span>
+          </div>
+          <div id="memberPicker" class="member-picker"></div>
+
+          <div class="section-head add-head">
+            <h2>Añadir producto</h2>
+            <span class="section-hint">Rápido y claro</span>
+          </div>
+          <form id="itemForm" class="item-form">
+            <input id="itemName" name="name" type="text" placeholder="Ej. leche" required maxlength="80" />
+            <div class="row two-cols">
+              <input id="itemQty" name="qty" type="text" placeholder="Cantidad" maxlength="20" />
+              <select id="itemCategory" name="category">
+                <option value="General">General</option>
+                <option value="Frescos">Frescos</option>
+                <option value="Despensa">Despensa</option>
+                <option value="Limpieza">Limpieza</option>
+                <option value="Baño">Baño</option>
+                <option value="Mascota">Mascota</option>
+              </select>
+            </div>
+            <textarea id="itemNotes" name="notes" rows="3" placeholder="Marca, detalles o notas"></textarea>
+            <button type="submit" class="primary-btn">Añadir a la lista</button>
+          </form>
+        </section>
+
+        <section class="panel list-panel">
+          <div class="toolbar">
+            <div class="filters" id="filters">
+              <button type="button" class="filter is-active" data-filter="all">Todo</button>
+              <button type="button" class="filter" data-filter="pending">Pendiente</button>
+              <button type="button" class="filter" data-filter="done">Comprado</button>
+            </div>
+            <button id="clearDoneBtn" type="button" class="ghost-btn">Limpiar comprados</button>
+          </div>
+
+          <div id="listMeta" class="list-meta"></div>
+          <div id="itemsList" class="items-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="itemTemplate">
+      <article class="item-card">
+        <div class="item-main">
+          <label class="check-wrap">
+            <input type="checkbox" class="item-check" />
+            <span class="custom-check"></span>
+          </label>
+          <div class="item-copy">
+            <div class="item-title-row">
+              <h3 class="item-name"></h3>
+              <span class="item-category"></span>
+            </div>
+            <p class="item-notes"></p>
+            <div class="item-meta-row">
+              <span class="pill qty-pill"></span>
+              <span class="pill by-pill"></span>
+              <span class="pill added-pill"></span>
+            </div>
+          </div>
+        </div>
+        <button class="delete-btn" title="Eliminar" type="button">×</button>
+      </article>
+    </template>
+
+    <script src="config.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

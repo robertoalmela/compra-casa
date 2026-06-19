@@ -1,0 +1,10 @@
+{
+  "name": "Compra Casa",
+  "short_name": "Compra",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b141a",
+  "theme_color": "#10212b",
+  "description": "Lista de la compra compartida para casa",
+  "icons": []
+}
