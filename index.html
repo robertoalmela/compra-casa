@@ -50,6 +50,9 @@
             <h2>Quién eres</h2>
             <span class="section-hint">Usuario activo</span>
           </div>
+          <div id="onboardingHint" class="onboarding-hint" hidden>
+            <p>👋 <strong>¿Quién eres tú en casa?</strong> Toca tu nombre para empezar.</p>
+          </div>
           <div id="memberPicker" class="member-picker"></div>
 
           <div class="section-head add-head">
@@ -81,7 +84,10 @@
           <section class="subpanel">
             <div class="section-head">
               <h2>Reposición inteligente</h2>
-              <span class="section-hint">Heurística simple</span>
+              <button type="button" class="hint-btn" id="suggestionHintBtn" aria-label="¿Cómo funciona?">?</button>
+            </div>
+            <div id="suggestionHint" class="onboarding-hint" hidden>
+              <p>Sugiere productos cuando llevan más de 7 días sin comprarse y se han comprado al menos 2 veces. Cuanto más los uses, más afinada es la sugerencia.</p>
             </div>
             <div id="suggestionsList" class="stack-list"></div>
           </section>
@@ -157,6 +163,11 @@
       </article>
     </template>
 
+    <div id="installBanner" class="install-banner" hidden>
+      <span>📲 Instala la app para acceso rápido desde el súper</span>
+      <button type="button" id="installBtn" class="primary-btn install-accept">Instalar</button>
+      <button type="button" id="installDismiss" class="ghost-btn">Ahora no</button>
+    </div>
     <script src="config.js"></script>
     <script type="module" src="app.js"></script>
   </body>

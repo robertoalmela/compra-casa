@@ -36,6 +36,7 @@ const ptrIndicator = document.getElementById('ptrIndicator');
 const authSection = document.getElementById('authSection');
 const authContent = document.getElementById('authContent');
 const toastContainer = document.getElementById('toastContainer');
+const onboardingHint = document.getElementById('onboardingHint');
 
 let swipeCtx = null;
 let ptrCtx = null;
@@ -179,6 +180,30 @@ function computeBalances() {
   }));
 }
 
+function computeSettlements() {
+  const balances = computeBalances();
+  const debtors = balances.filter(b => b.cents < 0).map(b => ({ ...b, cents: Math.abs(b.cents) }));
+  const creditors = balances.filter(b => b.cents > 0).map(b => ({ ...b }));
+  const settlements = [];
+
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const amount = Math.min(debtors[i].cents, creditors[j].cents);
+    if (amount > 0) {
+      settlements.push({
+        from: debtors[i].name,
+        to: creditors[j].name,
+        cents: amount,
+      });
+    }
+    debtors[i].cents -= amount;
+    creditors[j].cents -= amount;
+    if (debtors[i].cents === 0) i++;
+    if (creditors[j].cents === 0) j++;
+  }
+  return settlements;
+}
+
 function getPriceHistory(productId) {
   return state.events
     .filter((event) => event.productId === productId && event.type === 'bought' && event.amountCents > 0)
@@ -225,6 +250,13 @@ async function shareList() {
   }
 }
 
+function persistActiveMember(id) {
+  try { localStorage.setItem('compra-casa:activeMember', id); } catch {}
+}
+function restoreActiveMember() {
+  try { return localStorage.getItem('compra-casa:activeMember'); } catch { return null; }
+}
+
 function renderMembers() {
   memberPicker.innerHTML = '';
   if (!state.members.length) {
@@ -234,6 +266,10 @@ function renderMembers() {
     memberPicker.appendChild(empty);
     return;
   }
+  const hasSavedMember = restoreActiveMember() && state.members.some(m => m.id === restoreActiveMember());
+  if (onboardingHint) {
+    onboardingHint.hidden = hasSavedMember || state.members.length === 0;
+  }
   state.members.forEach((member) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -241,6 +277,8 @@ function renderMembers() {
     button.textContent = member.name;
     button.addEventListener('click', () => {
       state.activeMemberId = member.id;
+      persistActiveMember(member.id);
+      if (onboardingHint) onboardingHint.hidden = true;
       render();
     });
     memberPicker.appendChild(button);
@@ -300,6 +338,8 @@ function renderSuggestions() {
 function renderBalances() {
   balancesList.innerHTML = '';
   const balances = computeBalances().sort((a, b) => b.cents - a.cents);
+  const settlements = computeSettlements();
+
   if (!balances.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
@@ -307,6 +347,7 @@ function renderBalances() {
     balancesList.appendChild(empty);
     return;
   }
+
   balances.forEach((entry) => {
     const card = document.createElement('article');
     card.className = `mini-card ${entry.cents >= 0 ? 'positive' : 'negative'}`;
@@ -318,6 +359,25 @@ function renderBalances() {
     `;
     balancesList.appendChild(card);
   });
+
+  if (settlements.length) {
+    const heading = document.createElement('p');
+    heading.className = 'section-hint';
+    heading.style.margin = '0.75rem 0 0.4rem';
+    heading.textContent = 'Para saldar cuentas:';
+    balancesList.appendChild(heading);
+
+    settlements.forEach((s) => {
+      const card = document.createElement('article');
+      card.className = 'mini-card settlement';
+      card.innerHTML = `
+        <strong>${s.from}</strong>
+        <span>→ ${s.to}</span>
+        <small>${formatCurrencyFromCents(s.cents)}</small>
+      `;
+      balancesList.appendChild(card);
+    });
+  }
 }
 
 function renderEvents() {
@@ -486,7 +546,10 @@ async function ensureMembers() {
     members = inserted || [];
   }
   state.members = members.map((member) => ({ id: member.id, name: member.display_name }));
-  if (!state.activeMemberId || !state.members.some((member) => member.id === state.activeMemberId)) {
+  const saved = restoreActiveMember();
+  if (saved && state.members.some(m => m.id === saved)) {
+    state.activeMemberId = saved;
+  } else {
     state.activeMemberId = state.members[0]?.id || null;
   }
 }
@@ -841,6 +904,14 @@ function bindEvents() {
   });
 
   exportBtn.addEventListener('click', shareList);
+
+  const suggestionHintBtn = document.getElementById('suggestionHintBtn');
+  const suggestionHint = document.getElementById('suggestionHint');
+  if (suggestionHintBtn && suggestionHint) {
+    suggestionHintBtn.addEventListener('click', () => {
+      suggestionHint.hidden = !suggestionHint.hidden;
+    });
+  }
 }
 
 function renderConfigHelp() {
@@ -859,6 +930,43 @@ function renderConfigHelp() {
   itemsList.appendChild(empty);
   setStatus('Configura Supabase en config.js para activar stock, historial y balances reales.', 'warning');
 }
+
+let deferredInstallPrompt = null;
+const installBanner = document.getElementById('installBanner');
+const installBtn = document.getElementById('installBtn');
+const installDismiss = document.getElementById('installDismiss');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const dismissed = localStorage.getItem('compra-casa:installDismissed');
+  if (!dismissed && installBanner) {
+    installBanner.hidden = false;
+  }
+});
+
+if (installBtn) {
+  installBtn.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    if (outcome === 'accepted') showToast('App instalada 🎉', 'success');
+    deferredInstallPrompt = null;
+    installBanner.hidden = true;
+  });
+}
+
+if (installDismiss) {
+  installDismiss.addEventListener('click', () => {
+    installBanner.hidden = true;
+    try { localStorage.setItem('compra-casa:installDismissed', '1'); } catch {}
+  });
+}
+
+window.addEventListener('appinstalled', () => {
+  installBanner.hidden = true;
+  deferredInstallPrompt = null;
+});
 
 async function bootstrap() {
   bindEvents();

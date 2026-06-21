@@ -667,6 +667,61 @@ button:hover {
   background: rgba(255, 123, 114, 0.08);
 }
 
+.mini-card.settlement {
+  border-left: 3px solid var(--accent);
+  opacity: 0.85;
+}
+
+.onboarding-hint {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.onboarding-hint p { margin: 0; }
+
+.hint-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.5;
+  color: inherit;
+  line-height: 1;
+  padding: 0;
+}
+.hint-btn:hover { opacity: 1; }
+
+.install-banner {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 2rem);
+  max-width: 480px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.install-banner span { flex: 1; font-size: 0.88rem; min-width: 160px; }
+.install-accept { padding: 0.4rem 0.9rem; font-size: 0.85rem; }
+
 .item-actions {
   display: flex;
   flex-direction: column;
