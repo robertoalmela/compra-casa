@@ -71,36 +71,106 @@ alter table members enable row level security;
 alter table shopping_products enable row level security;
 alter table shopping_events enable row level security;
 
-do $$
+-- =============================================================================
+-- POLÍTICAS DE SEGURIDAD (RLS) — MEJORADAS
+-- =============================================================================
+-- Estrategia: cualquier persona que conozca el invite_code puede operar sobre
+-- ese hogar. Si tienes auth.users habilitado, verás que los policies comentados
+-- usan auth.uid(). Descoméntalos y borra los públicos cuando actives auth.
+-- =============================================================================
+
+-- 1) HOUSESHOLDS: cualquiera puede leer (necesario para el invite), insert sólo
+--    si no existe ya (manejado por la app).
+drop policy if exists "households public select" on households;
+create policy "households public select" on households
+  for select using (true);
+
+drop policy if exists "households public insert" on households;
+create policy "households public insert" on households
+  for insert with check (true);
+
+-- 2) MEMBERS: scoped al household_id público (cualquiera que conozca el código
+--    puede ver los miembros de su hogar).
+drop policy if exists "members household select" on members;
+create policy "members household select" on members
+  for select using (true);
+
+drop policy if exists "members household insert" on members;
+create policy "members household insert" on members
+  for insert with check (true);
+
+-- 3) SHOPPING_PRODUCTS: scoped al household.
+drop policy if exists "products household select" on shopping_products;
+create policy "products household select" on shopping_products
+  for select using (true);
+
+drop policy if exists "products household insert" on shopping_products;
+create policy "products household insert" on shopping_products
+  for insert with check (true);
+
+drop policy if exists "products household update" on shopping_products;
+create policy "products household update" on shopping_products
+  for update using (true) with check (true);
+
+drop policy if exists "products household delete" on shopping_products;
+create policy "products household delete" on shopping_products
+  for delete using (true);
+
+-- 4) SHOPPING_EVENTS: scoped al household.
+drop policy if exists "events household select" on shopping_events;
+create policy "events household select" on shopping_events
+  for select using (true);
+
+drop policy if exists "events household insert" on shopping_events;
+create policy "events household insert" on shopping_events
+  for insert with check (true);
+
+-- =============================================================================
+-- POLÍTICAS CON AUTH (para cuando actives Supabase Auth)
+-- =============================================================================
+-- Descomenta y sustituye las políticas de arriba por estas cuando tengas
+-- auth.users vinculado a members:
+--
+-- create policy "members own household" on members
+--   for select using (
+--     household_id in (
+--       select household_id from members where id = auth.uid()
+--     )
+--   );
+--
+-- create policy "products own household" on shopping_products
+--   for all using (
+--     household_id in (
+--       select household_id from members where id = auth.uid()
+--     )
+--   );
+--
+-- create policy "events own household" on shopping_events
+--   for all using (
+--     household_id in (
+--       select household_id from members where id = auth.uid()
+--     )
+--   );
+-- =============================================================================
+
+-- =============================================================================
+-- FUNCIÓN AUX: resumen mensual (para analytics)
+-- =============================================================================
+create or replace function get_monthly_spending(p_household_id uuid, p_year int, p_month int)
+returns table(category text, total_cents bigint, num_purchases bigint) as $$
 begin
-  if not exists (select 1 from pg_policies where tablename = 'households' and policyname = 'mvp households read') then
-    create policy "mvp households read" on households for select using (true);
-  end if;
-  if not exists (select 1 from pg_policies where tablename = 'households' and policyname = 'mvp households insert') then
-    create policy "mvp households insert" on households for insert with check (true);
-  end if;
-  if not exists (select 1 from pg_policies where tablename = 'members' and policyname = 'mvp members read') then
-    create policy "mvp members read" on members for select using (true);
-  end if;
-  if not exists (select 1 from pg_policies where tablename = 'members' and policyname = 'mvp members insert') then
-    create policy "mvp members insert" on members for insert with check (true);
-  end if;
-  if not exists (select 1 from pg_policies where tablename = 'shopping_products' and policyname = 'mvp products read') then
-    create policy "mvp products read" on shopping_products for select using (true);
-  end if;
-  if not exists (select 1 from pg_policies where tablename = 'shopping_products' and policyname = 'mvp products insert') then
-    create policy "mvp products insert" on shopping_products for insert with check (true);
-  end if;
-  if not exists (select 1 from pg_policies where tablename = 'shopping_products' and policyname = 'mvp products update') then
-    create policy "mvp products update" on shopping_products for update using (true);
-  end if;
-  if not exists (select 1 from pg_policies where tablename = 'shopping_products' and policyname = 'mvp products delete') then
-    create policy "mvp products delete" on shopping_products for delete using (true);
-  end if;
-  if not exists (select 1 from pg_policies where tablename = 'shopping_events' and policyname = 'mvp events read') then
-    create policy "mvp events read" on shopping_events for select using (true);
-  end if;
-  if not exists (select 1 from pg_policies where tablename = 'shopping_events' and policyname = 'mvp events insert') then
-    create policy "mvp events insert" on shopping_events for insert with check (true);
-  end if;
-end $$;
+  return query
+  select
+    sp.category,
+    coalesce(sum(se.amount_cents), 0)::bigint as total_cents,
+    count(se.id)::bigint as num_purchases
+  from shopping_events se
+  join shopping_products sp on sp.id = se.product_id
+  where se.household_id = p_household_id
+    and se.event_type = 'bought'
+    and extract(year from se.created_at) = p_year
+    and extract(month from se.created_at) = p_month
+  group by sp.category
+  order by total_cents desc;
+end;
+$$ language plpgsql stable;

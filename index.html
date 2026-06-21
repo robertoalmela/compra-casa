@@ -2,14 +2,23 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Compra Casa</title>
     <meta name="theme-color" content="#10212b" />
     <meta name="description" content="Lista de la compra compartida para casa" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <div id="ptrIndicator" class="ptr-indicator" hidden aria-hidden="true">
+      <svg class="ptr-spinner" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#73f0ac" stroke-width="3" stroke-dasharray="31.4 31.4"/></svg>
+      <span class="ptr-text">Actualizando…</span>
+    </div>
+
     <div class="app-shell">
       <header class="hero">
         <div>
@@ -48,7 +57,12 @@
             <span class="section-hint">Base permanente</span>
           </div>
           <form id="itemForm" class="item-form">
-            <input id="itemName" name="name" type="text" placeholder="Ej. leche" required maxlength="80" />
+            <div class="input-with-icon">
+              <input id="itemName" name="name" type="text" placeholder="Ej. leche" required maxlength="80" />
+              <button type="button" class="icon-btn scan-btn" id="scanBtn" title="Escanear código de barras" aria-label="Escanear código de barras">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="4" height="4"/><rect x="17" y="3" width="4" height="4"/><rect x="3" y="17" width="4" height="4"/><rect x="17" y="17" width="4" height="4"/><line x1="9" y1="6" x2="15" y2="6"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="7" y1="10" x2="7" y2="14"/><line x1="17" y1="10" x2="17" y2="14"/></svg>
+              </button>
+            </div>
             <div class="row two-cols">
               <input id="itemQty" name="qty" type="text" placeholder="Cantidad habitual" maxlength="20" />
               <select id="itemCategory" name="category">
@@ -81,6 +95,9 @@
               <button type="button" class="filter" data-filter="stock">En casa</button>
               <button type="button" class="filter" data-filter="archived">Archivados</button>
             </div>
+            <div class="toolbar-actions">
+              <button type="button" class="ghost-btn" id="exportBtn" title="Compartir lista">Compartir</button>
+            </div>
           </div>
 
           <div id="listMeta" class="list-meta"></div>
@@ -99,12 +116,24 @@
             <span class="section-hint">Compras y consumo</span>
           </div>
           <div id="eventsList" class="stack-list"></div>
+
+          <div id="authSection" class="subpanel" hidden>
+            <div class="section-head">
+              <h2>Cuenta</h2>
+              <span class="section-hint">Autenticación</span>
+            </div>
+            <div id="authContent" class="auth-content"></div>
+          </div>
         </section>
       </main>
     </div>
 
+    <div id="toastContainer" class="toast-container" role="status" aria-live="polite"></div>
+
     <template id="itemTemplate">
-      <article class="item-card">
+      <article class="item-card" draggable="false">
+        <div class="item-swipe-bg bg-buy"></div>
+        <div class="item-swipe-bg bg-archive"></div>
         <div class="item-main">
           <div class="item-copy">
             <div class="item-title-row">

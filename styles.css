@@ -261,10 +261,27 @@ select:focus {
   border-radius: 18px;
   border: 1px solid var(--line);
   background: rgba(255,255,255,0.03);
+  position: relative;
+  overflow: hidden;
+  transform: translateX(0);
+  transition: transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
+  touch-action: pan-y;
+  user-select: none;
 }
 
 .item-card.is-done {
   background: rgba(115, 240, 172, 0.08);
+}
+
+.item-card .item-main {
+  position: relative;
+  z-index: 1;
+  background: inherit;
+}
+
+.item-card .item-actions {
+  position: relative;
+  z-index: 1;
 }
 
 .item-main {
@@ -385,6 +402,237 @@ button:hover {
 .subpanel,
 .side-panel {
   margin-top: 18px;
+}
+
+/* ===== Pull-to-refresh ===== */
+.ptr-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  color: var(--accent);
+  font-size: 0.9rem;
+  transition: opacity 0.2s;
+}
+
+.ptr-spinner {
+  animation: ptr-rotate 1s linear infinite;
+}
+
+@keyframes ptr-rotate {
+  to { transform: rotate(360deg); }
+}
+
+/* ===== Swipe gesture ===== */
+.item-card.is-swiping {
+  transition: none;
+  cursor: grabbing;
+}
+
+.item-swipe-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 0;
+}
+
+.bg-buy {
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  color: #062012;
+  justify-content: flex-end;
+}
+
+.bg-archive {
+  background: linear-gradient(135deg, #ff7b72, #ff5a50);
+  color: #fff;
+  justify-content: flex-start;
+}
+
+/* ===== Input with icon ===== */
+.input-with-icon {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.input-with-icon input {
+  flex: 1;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  min-width: 48px;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.icon-btn:hover {
+  background: var(--panel-soft);
+  color: var(--accent);
+}
+
+.icon-btn.is-active {
+  background: rgba(115, 240, 172, 0.15);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.scan-btn.is-scanning {
+  animation: scan-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes scan-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(115, 240, 172, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(115, 240, 172, 0); }
+}
+
+/* ===== Toolbar actions ===== */
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* ===== Toast notifications ===== */
+.toast-container {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 90vw;
+}
+
+.toast {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px 20px;
+  color: var(--text);
+  font-size: 0.9rem;
+  box-shadow: var(--shadow), 0 0 0 1px rgba(255,255,255,0.04);
+  pointer-events: auto;
+  animation: toast-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toast.is-success { border-left: 4px solid var(--accent); }
+.toast.is-error { border-left: 4px solid var(--danger); }
+.toast.is-warning { border-left: 4px solid #ffd54f; }
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.toast.is-exiting {
+  animation: toast-out 0.3s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.95);
+  }
+}
+
+/* ===== Auth section ===== */
+.auth-content {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-form input[type="email"] {
+  width: 100%;
+}
+
+.auth-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+}
+
+.auth-user-email {
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* ===== Item card entrance animation ===== */
+.item-card {
+  animation: card-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.item-card.is-removing {
+  animation: card-out 0.25s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes card-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+}
+
+/* ===== Responsive tweaks ===== */
+@media (max-width: 360px) {
+  .stat-card { min-width: 100px; padding: 10px 12px; }
+  .item-actions { flex-direction: row; }
+}
+
+@media (hover: none) {
+  .member-btn:hover,
+  .filter:hover,
+  .ghost-btn:hover {
+    transform: none;
+  }
 }
 
 .stack-list {

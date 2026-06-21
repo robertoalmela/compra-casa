@@ -10,6 +10,7 @@ const state = {
   activeMemberId: null,
   supabase: null,
   channel: null,
+  user: null,
 };
 
 const memberPicker = document.getElementById('memberPicker');
@@ -29,10 +30,30 @@ const statusBanner = document.getElementById('statusBanner');
 const suggestionsList = document.getElementById('suggestionsList');
 const balancesList = document.getElementById('balancesList');
 const eventsList = document.getElementById('eventsList');
+const scanBtn = document.getElementById('scanBtn');
+const exportBtn = document.getElementById('exportBtn');
+const ptrIndicator = document.getElementById('ptrIndicator');
+const authSection = document.getElementById('authSection');
+const authContent = document.getElementById('authContent');
+const toastContainer = document.getElementById('toastContainer');
+
+let swipeCtx = null;
+let ptrCtx = null;
 
 function setStatus(message, tone = 'info') {
   statusBanner.textContent = message;
   statusBanner.className = `status-banner is-${tone}`;
+}
+
+function showToast(message, tone = 'info', duration = 3000) {
+  const toast = document.createElement('div');
+  toast.className = `toast is-${tone}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('is-exiting');
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
 }
 
 function hasValidConfig() {
@@ -136,12 +157,7 @@ function getConsumptionMetrics(product) {
     suggestion = 'Aún no hay historial suficiente';
   }
 
-  return {
-    avgDays,
-    daysSinceReference,
-    suggestion,
-    urgency,
-  };
+  return { avgDays, daysSinceReference, suggestion, urgency };
 }
 
 function computeBalances() {
@@ -163,9 +179,54 @@ function computeBalances() {
   }));
 }
 
+function getPriceHistory(productId) {
+  return state.events
+    .filter((event) => event.productId === productId && event.type === 'bought' && event.amountCents > 0)
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .map((event) => ({ date: event.createdAt, price: event.amountCents / 100, member: event.memberName }));
+}
+
+function generateShareText() {
+  const needed = state.products.filter((p) => p.isNeeded && !p.isArchived);
+  const stock = state.products.filter((p) => !p.isNeeded && !p.isArchived);
+  const lines = ['🛒 LISTA DE LA COMPRA', `📅 ${new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}`, ''];
+  if (needed.length) {
+    lines.push('🔴 POR COMPRAR:');
+    needed.forEach((p) => lines.push(`  • ${p.name}${p.qtyLabel ? ` (${p.qtyLabel})` : ''}${p.notes ? ` — ${p.notes}` : ''}`));
+    lines.push('');
+  }
+  if (stock.length) {
+    lines.push('✅ EN CASA:');
+    stock.forEach((p) => lines.push(`  • ${p.name}${p.qtyLabel ? ` (${p.qtyLabel})` : ''}`));
+    lines.push('');
+  }
+  const balances = computeBalances();
+  if (balances.length) {
+    lines.push('💰 BALANCE:');
+    balances.forEach((b) => {
+      const label = b.cents >= 0 ? 'ha adelantado' : 'debe';
+      lines.push(`  • ${b.name}: ${label} ${formatCurrencyFromCents(Math.abs(b.cents))}`);
+    });
+  }
+  return lines.join('\n');
+}
+
+async function shareList() {
+  const text = generateShareText();
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Lista de la compra', text }); } catch { showToast('Compartir cancelado', 'warning', 2000); }
+  } else {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Lista copiada al portapapeles', 'success');
+    } catch {
+      showToast('No se pudo copiar', 'error');
+    }
+  }
+}
+
 function renderMembers() {
   memberPicker.innerHTML = '';
-
   if (!state.members.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
@@ -173,7 +234,6 @@ function renderMembers() {
     memberPicker.appendChild(empty);
     return;
   }
-
   state.members.forEach((member) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -199,7 +259,6 @@ function renderStats() {
   const balances = computeBalances();
   const activeBalance = balances.find((entry) => entry.id === state.activeMemberId);
   const activeMember = getActiveMember();
-
   pendingCount.textContent = pending;
   stockCount.textContent = stock;
   netBalance.textContent = activeBalance ? formatCurrencyFromCents(activeBalance.cents) : '0 €';
@@ -215,7 +274,6 @@ function renderSuggestions() {
     .map((product) => ({ product, metrics: getConsumptionMetrics(product) }))
     .sort((a, b) => b.metrics.urgency - a.metrics.urgency || a.product.name.localeCompare(b.product.name))
     .slice(0, 6);
-
   if (!cards.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
@@ -223,14 +281,17 @@ function renderSuggestions() {
     suggestionsList.appendChild(empty);
     return;
   }
-
   cards.forEach(({ product, metrics }) => {
     const card = document.createElement('article');
     card.className = 'mini-card';
+    const priceHistory = getPriceHistory(product.id);
+    const priceTrend = priceHistory.length >= 2
+      ? (priceHistory[priceHistory.length - 1].price - priceHistory[0].price).toFixed(2)
+      : null;
     card.innerHTML = `
       <strong>${product.name}</strong>
       <span>${metrics.suggestion}</span>
-      <small>Último precio: ${formatCurrencyFromCents(product.lastPriceCents)}</small>
+      <small>Último precio: ${formatCurrencyFromCents(product.lastPriceCents)}${priceTrend ? ` · tendencia: ${Number(priceTrend) >= 0 ? '+' : ''}${priceTrend} €` : ''}</small>
     `;
     suggestionsList.appendChild(card);
   });
@@ -239,7 +300,6 @@ function renderSuggestions() {
 function renderBalances() {
   balancesList.innerHTML = '';
   const balances = computeBalances().sort((a, b) => b.cents - a.cents);
-
   if (!balances.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
@@ -247,7 +307,6 @@ function renderBalances() {
     balancesList.appendChild(empty);
     return;
   }
-
   balances.forEach((entry) => {
     const card = document.createElement('article');
     card.className = `mini-card ${entry.cents >= 0 ? 'positive' : 'negative'}`;
@@ -264,7 +323,6 @@ function renderBalances() {
 function renderEvents() {
   eventsList.innerHTML = '';
   const latest = state.events.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 8);
-
   if (!latest.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
@@ -272,7 +330,6 @@ function renderEvents() {
     eventsList.appendChild(empty);
     return;
   }
-
   latest.forEach((event) => {
     const card = document.createElement('article');
     card.className = 'mini-card';
@@ -286,10 +343,51 @@ function renderEvents() {
   });
 }
 
+function renderAuth() {
+  if (!state.supabase) return;
+  authContent.innerHTML = '';
+  if (state.user) {
+    authSection.hidden = false;
+    const div = document.createElement('div');
+    div.className = 'auth-user';
+    div.innerHTML = `
+      <span class="auth-user-email">${state.user.email}</span>
+      <button type="button" class="ghost-btn" id="logoutBtn">Cerrar sesión</button>
+    `;
+    authContent.appendChild(div);
+    div.querySelector('#logoutBtn')?.addEventListener('click', async () => {
+      await state.supabase.auth.signOut();
+      state.user = null;
+      render();
+    });
+  } else if (config.supabaseAnonKey && !config.supabaseAnonKey.includes('REPLACE_WITH')) {
+    authSection.hidden = false;
+    const form = document.createElement('form');
+    form.className = 'auth-form';
+    form.innerHTML = `
+      <input type="email" id="authEmail" placeholder="tu@email.com" required />
+      <button type="submit" class="primary-btn">Enviar enlace mágico</button>
+    `;
+    authContent.appendChild(form);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = form.querySelector('#authEmail').value;
+      const { error } = await state.supabase.auth.signInWithOtp({ email });
+      if (error) {
+        showToast(`Error: ${error.message}`, 'error');
+      } else {
+        showToast('Enlace mágico enviado a tu correo', 'success');
+        form.innerHTML = '<p style="color:var(--muted);font-size:0.9rem">Revisa tu bandeja de entrada.</p>';
+      }
+    });
+  } else {
+    authSection.hidden = true;
+  }
+}
+
 function renderProducts() {
   itemsList.innerHTML = '';
   const products = filteredProducts();
-
   if (!products.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
@@ -297,7 +395,6 @@ function renderProducts() {
     itemsList.appendChild(empty);
     return;
   }
-
   products.forEach((product) => {
     const metrics = getConsumptionMetrics(product);
     const node = itemTemplate.content.firstElementChild.cloneNode(true);
@@ -336,6 +433,7 @@ function renderProducts() {
       archiveBtn.addEventListener('click', () => archiveProduct(product.id));
     }
 
+    node.dataset.productId = product.id;
     itemsList.appendChild(node);
   });
 }
@@ -348,6 +446,7 @@ function render() {
   renderBalances();
   renderEvents();
   renderProducts();
+  renderAuth();
 }
 
 async function ensureHousehold() {
@@ -356,22 +455,16 @@ async function ensureHousehold() {
     .select('id, name, invite_code')
     .eq('invite_code', config.householdInviteCode)
     .maybeSingle();
-
   if (fetchError) throw fetchError;
   if (existing) {
     state.household = existing;
     return;
   }
-
   const { data: inserted, error: insertError } = await state.supabase
     .from('households')
-    .insert({
-      name: config.householdName || 'Casa',
-      invite_code: config.householdInviteCode,
-    })
+    .insert({ name: config.householdName || 'Casa', invite_code: config.householdInviteCode })
     .select('id, name, invite_code')
     .single();
-
   if (insertError) throw insertError;
   state.household = inserted;
 }
@@ -382,21 +475,16 @@ async function ensureMembers() {
     .select('id, display_name')
     .eq('household_id', state.household.id)
     .order('created_at', { ascending: true });
-
   if (error) throw error;
-
   let members = data || [];
   if (!members.length) {
     const seedMembers = (config.defaultMembers || ['Roberto', 'Hermano 1', 'Hermano 2']).map((display_name) => ({
-      household_id: state.household.id,
-      display_name,
+      household_id: state.household.id, display_name,
     }));
-
     const { data: inserted, error: insertError } = await state.supabase.from('members').insert(seedMembers).select('id, display_name');
     if (insertError) throw insertError;
     members = inserted || [];
   }
-
   state.members = members.map((member) => ({ id: member.id, name: member.display_name }));
   if (!state.activeMemberId || !state.members.some((member) => member.id === state.activeMemberId)) {
     state.activeMemberId = state.members[0]?.id || null;
@@ -407,26 +495,14 @@ async function loadProducts() {
   const { data, error } = await state.supabase
     .from('shopping_products')
     .select(`
-      id,
-      name,
-      qty_label,
-      category,
-      notes,
-      is_needed,
-      is_archived,
-      last_price_cents,
-      created_at,
-      updated_at,
-      last_bought_at,
-      last_consumed_at,
+      id, name, qty_label, category, notes, is_needed, is_archived,
+      last_price_cents, created_at, updated_at, last_bought_at, last_consumed_at,
       last_bought_by:members!shopping_products_last_bought_by_member_id_fkey(display_name),
       last_consumed_by:members!shopping_products_last_consumed_by_member_id_fkey(display_name)
     `)
     .eq('household_id', state.household.id)
     .order('updated_at', { ascending: false });
-
   if (error) throw error;
-
   state.products = (data || []).map((product) => ({
     id: product.id,
     name: product.name,
@@ -446,36 +522,21 @@ async function loadProducts() {
 }
 
 function eventLabel(type) {
-  return {
-    created: 'creado',
-    bought: 'comprado',
-    consumed: 'gastado',
-    needed: 'marcado como pendiente',
-    archived: 'archivado',
-    unarchived: 'reactivado',
-  }[type] || type;
+  return { created: 'creado', bought: 'comprado', consumed: 'gastado', needed: 'marcado como pendiente', archived: 'archivado', unarchived: 'reactivado' }[type] || type;
 }
 
 async function loadEvents() {
   const { data, error } = await state.supabase
     .from('shopping_events')
     .select(`
-      id,
-      product_id,
-      member_id,
-      event_type,
-      amount_cents,
-      notes,
-      created_at,
+      id, product_id, member_id, event_type, amount_cents, notes, created_at,
       product:shopping_products!shopping_events_product_id_fkey(name),
       member:members!shopping_events_member_id_fkey(display_name)
     `)
     .eq('household_id', state.household.id)
     .order('created_at', { ascending: false })
     .limit(400);
-
   if (error) throw error;
-
   state.events = (data || []).map((event) => ({
     id: event.id,
     productId: event.product_id,
@@ -501,172 +562,269 @@ async function addItem(event) {
   const activeMember = getActiveMember();
   const name = itemName.value.trim();
   if (!name || !activeMember) return;
-
   setStatus('Creando producto…', 'info');
-
   const { data: inserted, error } = await state.supabase
     .from('shopping_products')
     .insert({
-      household_id: state.household.id,
-      name,
-      qty_label: itemQty.value.trim(),
-      category: itemCategory.value,
-      notes: itemNotes.value.trim(),
-      is_needed: true,
-      created_by_member_id: activeMember.id,
+      household_id: state.household.id, name, qty_label: itemQty.value.trim(),
+      category: itemCategory.value, notes: itemNotes.value.trim(),
+      is_needed: true, created_by_member_id: activeMember.id,
     })
     .select('id, name')
     .single();
-
-  if (error) {
-    setStatus(`Error al guardar: ${error.message}`, 'error');
-    return;
-  }
-
+  if (error) { setStatus(`Error al guardar: ${error.message}`, 'error'); return; }
   await state.supabase.from('shopping_events').insert({
-    household_id: state.household.id,
-    product_id: inserted.id,
-    member_id: activeMember.id,
-    event_type: 'created',
-    notes: 'Producto creado',
+    household_id: state.household.id, product_id: inserted.id,
+    member_id: activeMember.id, event_type: 'created', notes: 'Producto creado',
   });
-
   itemForm.reset();
   itemCategory.value = 'General';
   itemName.focus();
   await refreshAll();
-  setStatus('Producto creado y añadido al stock reutilizable.', 'success');
+  showToast(`${name} añadido a la lista`, 'success');
 }
 
 async function buyProduct(product) {
   const activeMember = getActiveMember();
   if (!activeMember) return;
-
   const rawPrice = window.prompt(`¿Cuánto costó ${product.name}?`, product.lastPriceCents ? String(product.lastPriceCents / 100) : '');
   if (rawPrice === null) return;
   const amountCents = parsePriceToCents(rawPrice);
-  if (amountCents == null) {
-    setStatus('Precio inválido. Usa por ejemplo 2,35', 'warning');
-    return;
-  }
-
+  if (amountCents == null) { setStatus('Precio inválido. Usa por ejemplo 2,35', 'warning'); return; }
   const note = window.prompt('¿Alguna nota de compra? (opcional)', '') ?? '';
-
-  const { error } = await state.supabase
-    .from('shopping_products')
-    .update({
-      is_needed: false,
-      last_price_cents: amountCents,
-      last_bought_by_member_id: activeMember.id,
-      last_bought_at: new Date().toISOString(),
-    })
-    .eq('id', product.id);
-
-  if (error) {
-    setStatus(`Error al marcar compra: ${error.message}`, 'error');
-    return;
-  }
-
+  const { error } = await state.supabase.from('shopping_products').update({
+    is_needed: false, last_price_cents: amountCents,
+    last_bought_by_member_id: activeMember.id, last_bought_at: new Date().toISOString(),
+  }).eq('id', product.id);
+  if (error) { setStatus(`Error al marcar compra: ${error.message}`, 'error'); return; }
   await state.supabase.from('shopping_events').insert({
-    household_id: state.household.id,
-    product_id: product.id,
-    member_id: activeMember.id,
-    event_type: 'bought',
-    amount_cents: amountCents,
-    notes: note,
+    household_id: state.household.id, product_id: product.id,
+    member_id: activeMember.id, event_type: 'bought',
+    amount_cents: amountCents, notes: note,
   });
-
   await refreshAll();
-  setStatus(`Compra guardada. ${product.name} ya está en casa y el gasto entra en balance.`, 'success');
+  showToast(`${product.name} comprado · ${formatCurrencyFromCents(amountCents)}`, 'success');
 }
 
 async function consumeProduct(product) {
   const activeMember = getActiveMember();
   if (!activeMember) return;
   const note = window.prompt(`¿Se ha gastado ${product.name}? Nota opcional`, '') ?? '';
-
-  const { error } = await state.supabase
-    .from('shopping_products')
-    .update({
-      is_needed: true,
-      last_consumed_by_member_id: activeMember.id,
-      last_consumed_at: new Date().toISOString(),
-    })
-    .eq('id', product.id);
-
-  if (error) {
-    setStatus(`Error al marcar consumo: ${error.message}`, 'error');
-    return;
-  }
-
+  const { error } = await state.supabase.from('shopping_products').update({
+    is_needed: true, last_consumed_by_member_id: activeMember.id,
+    last_consumed_at: new Date().toISOString(),
+  }).eq('id', product.id);
+  if (error) { setStatus(`Error al marcar consumo: ${error.message}`, 'error'); return; }
   await state.supabase.from('shopping_events').insert({
-    household_id: state.household.id,
-    product_id: product.id,
-    member_id: activeMember.id,
-    event_type: 'consumed',
-    notes: note,
+    household_id: state.household.id, product_id: product.id,
+    member_id: activeMember.id, event_type: 'consumed', notes: note,
   });
-
   await refreshAll();
-  setStatus(`${product.name} vuelve a pendiente para la próxima compra.`, 'success');
+  showToast(`${product.name} gastado · vuelve a la lista de compra`, 'success');
 }
 
 async function archiveProduct(productId) {
   const activeMember = getActiveMember();
   const { error } = await state.supabase.from('shopping_products').update({ is_archived: true }).eq('id', productId);
-  if (error) {
-    setStatus(`Error al archivar: ${error.message}`, 'error');
-    return;
-  }
+  if (error) { setStatus(`Error al archivar: ${error.message}`, 'error'); return; }
   await state.supabase.from('shopping_events').insert({
-    household_id: state.household.id,
-    product_id: productId,
-    member_id: activeMember?.id || null,
-    event_type: 'archived',
+    household_id: state.household.id, product_id: productId,
+    member_id: activeMember?.id || null, event_type: 'archived',
   });
   await refreshAll();
-  setStatus('Producto archivado.', 'success');
+  showToast('Producto archivado', 'success');
 }
 
 async function unarchiveProduct(productId) {
   const activeMember = getActiveMember();
   const { error } = await state.supabase.from('shopping_products').update({ is_archived: false }).eq('id', productId);
-  if (error) {
-    setStatus(`Error al reactivar: ${error.message}`, 'error');
-    return;
-  }
+  if (error) { setStatus(`Error al reactivar: ${error.message}`, 'error'); return; }
   await state.supabase.from('shopping_events').insert({
-    household_id: state.household.id,
-    product_id: productId,
-    member_id: activeMember?.id || null,
-    event_type: 'unarchived',
+    household_id: state.household.id, product_id: productId,
+    member_id: activeMember?.id || null, event_type: 'unarchived',
   });
   await refreshAll();
-  setStatus('Producto reactivado.', 'success');
+  showToast('Producto reactivado', 'success');
 }
 
 function setupRealtime() {
   if (state.channel) state.supabase.removeChannel(state.channel);
-
   state.channel = state.supabase
     .channel(`shopping-stock-${state.household.id}`)
     .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'shopping_products',
+      event: '*', schema: 'public', table: 'shopping_products',
       filter: `household_id=eq.${state.household.id}`,
-    }, async () => {
-      await refreshAll();
-    })
+    }, async () => { await refreshAll(); })
     .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'shopping_events',
+      event: '*', schema: 'public', table: 'shopping_events',
       filter: `household_id=eq.${state.household.id}`,
-    }, async () => {
-      await refreshAll();
-    })
+    }, async () => { await refreshAll(); })
     .subscribe();
+}
+
+function setupSwipe() {
+  itemsList.addEventListener('touchstart', (e) => {
+    const card = e.target.closest('.item-card');
+    if (!card || card.closest('.item-actions')) return;
+    const touch = e.changedTouches[0];
+    swipeCtx = { card, startX: touch.clientX, startY: touch.clientY, currentX: 0, moved: false };
+  }, { passive: true });
+
+  itemsList.addEventListener('touchmove', (e) => {
+    if (!swipeCtx) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - swipeCtx.startX;
+    const dy = touch.clientY - swipeCtx.startY;
+    if (!swipeCtx.moved && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    swipeCtx.moved = true;
+    if (Math.abs(dx) < Math.abs(dy)) return;
+    e.preventDefault();
+    swipeCtx.currentX = dx;
+    const clamped = Math.max(-150, Math.min(150, dx));
+    swipeCtx.card.style.transform = `translateX(${clamped}px)`;
+    swipeCtx.card.classList.add('is-swiping');
+    const productId = swipeCtx.card.dataset.productId;
+    if (!productId) return;
+    const product = state.products.find((p) => p.id === productId);
+    if (!product) return;
+    const bgBuy = swipeCtx.card.querySelector('.bg-buy');
+    const bgArchive = swipeCtx.card.querySelector('.bg-archive');
+    if (bgBuy && bgArchive) {
+      if (clamped < -30 && product.isNeeded && !product.isArchived) {
+        bgBuy.style.opacity = Math.min(1, Math.abs(clamped) / 120);
+        bgArchive.style.opacity = 0;
+      } else if (clamped > 30 && !product.isArchived) {
+        bgArchive.style.opacity = Math.min(1, clamped / 120);
+        bgBuy.style.opacity = 0;
+      } else {
+        bgBuy.style.opacity = 0;
+        bgArchive.style.opacity = 0;
+      }
+    }
+  }, { passive: false });
+
+  itemsList.addEventListener('touchend', (e) => {
+    if (!swipeCtx || !swipeCtx.moved) { swipeCtx = null; return; }
+    const card = swipeCtx.card;
+    const dx = swipeCtx.currentX;
+    const productId = card.dataset.productId;
+    const product = state.products.find((p) => p.id === productId);
+    card.classList.remove('is-swiping');
+    card.style.transform = '';
+
+    const bgBuy = card.querySelector('.bg-buy');
+    const bgArchive = card.querySelector('.bg-archive');
+    if (bgBuy) bgBuy.style.opacity = 0;
+    if (bgArchive) bgArchive.style.opacity = 0;
+
+    if (product && dx < -80 && product.isNeeded && !product.isArchived) {
+      buyProduct(product);
+    } else if (product && dx < -80 && !product.isNeeded && !product.isArchived) {
+      consumeProduct(product);
+    } else if (product && dx > 80 && !product.isArchived) {
+      archiveProduct(product.id);
+    }
+
+    swipeCtx = null;
+  }, { passive: true });
+}
+
+function setupPullToRefresh() {
+  const shell = document.querySelector('.app-shell');
+  let startY = 0;
+  let pulling = false;
+
+  shell.addEventListener('touchstart', (e) => {
+    if (window.scrollY > 0) return;
+    startY = e.changedTouches[0].clientY;
+    pulling = true;
+    ptrCtx = { startY };
+  }, { passive: true });
+
+  shell.addEventListener('touchmove', (e) => {
+    if (!pulling || window.scrollY > 0) return;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (dy < 0) { ptrIndicator.hidden = true; return; }
+    if (dy > 30) {
+      ptrIndicator.hidden = false;
+      ptrIndicator.style.opacity = Math.min(1, (dy - 30) / 100);
+    }
+  }, { passive: true });
+
+  shell.addEventListener('touchend', async (e) => {
+    if (!pulling) return;
+    pulling = false;
+    const dy = e.changedTouches[0].clientY - startY;
+    ptrIndicator.hidden = true;
+    ptrIndicator.style.opacity = 1;
+    if (dy > 120 && hasValidConfig() && state.supabase) {
+      ptrIndicator.hidden = false;
+      ptrIndicator.querySelector('.ptr-text').textContent = 'Actualizando…';
+      await refreshAll();
+      ptrIndicator.querySelector('.ptr-text').textContent = 'Actualizado';
+      showToast('Datos actualizados', 'success');
+      setTimeout(() => { ptrIndicator.hidden = true; }, 800);
+    }
+    ptrCtx = null;
+  }, { passive: true });
+}
+
+async function setupBarcodeScanning() {
+  if (!('BarcodeDetector' in window)) {
+    scanBtn.title = 'Escanear no disponible en este navegador';
+    return;
+  }
+  scanBtn.hidden = false;
+  scanBtn.addEventListener('click', async () => {
+    if (scanBtn.classList.contains('is-scanning')) return;
+    try {
+      const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'codabar', 'itf', 'qr_code'] });
+      scanBtn.classList.add('is-scanning');
+      showToast('Enfoca un código de barras con la cámara', 'info', 4000);
+      const barcodes = await detector.detect(videoElement());
+      scanBtn.classList.remove('is-scanning');
+      if (barcodes.length > 0) {
+        itemName.value = barcodes[0].rawValue;
+        showToast(`Código: ${barcodes[0].rawValue}`, 'success', 2000);
+      } else {
+        showToast('No se detectó ningún código', 'warning', 2000);
+      }
+    } catch (err) {
+      scanBtn.classList.remove('is-scanning');
+      if (err.name === 'NotAllowedError' || err.name === 'NotFoundError') {
+        itemName.focus();
+        itemName.select();
+        showToast('Escribe el nombre del producto manualmente', 'warning', 2000);
+      } else {
+        showToast(`Error: ${err.message}`, 'error');
+      }
+    }
+  });
+}
+
+function videoElement() {
+  let vid = document.getElementById('barcodeVideo');
+  if (!vid) {
+    vid = document.createElement('video');
+    vid.id = 'barcodeVideo';
+    vid.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    document.body.appendChild(vid);
+  }
+  return vid;
+}
+
+function setupAuthListener() {
+  if (!state.supabase) return;
+  state.supabase.auth.onAuthStateChange((event, session) => {
+    state.user = session?.user || null;
+    render();
+  });
+}
+
+async function checkSession() {
+  if (!state.supabase) return;
+  const { data: { session } } = await state.supabase.auth.getSession();
+  state.user = session?.user || null;
 }
 
 function bindEvents() {
@@ -681,6 +839,8 @@ function bindEvents() {
   itemForm.addEventListener('submit', (event) => {
     addItem(event).catch((error) => setStatus(`Error al guardar: ${error.message}`, 'error'));
   });
+
+  exportBtn.addEventListener('click', shareList);
 }
 
 function renderConfigHelp() {
@@ -693,12 +853,10 @@ function renderConfigHelp() {
   pendingCount.textContent = '—';
   stockCount.textContent = '—';
   netBalance.textContent = '—';
-
   const empty = document.createElement('div');
   empty.className = 'empty-state';
   empty.innerHTML = 'Rellena <strong>config.js</strong> con tu <strong>Supabase URL</strong> y tu <strong>anon key</strong> pública. Luego ejecuta <strong>supabase/schema.sql</strong>.';
   itemsList.appendChild(empty);
-
   setStatus('Configura Supabase en config.js para activar stock, historial y balances reales.', 'warning');
 }
 
@@ -713,9 +871,14 @@ async function bootstrap() {
   try {
     setStatus('Conectando con Supabase…', 'info');
     state.supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
+    await checkSession();
+    setupAuthListener();
     await ensureHousehold();
     await refreshAll();
     setupRealtime();
+    setupSwipe();
+    setupPullToRefresh();
+    setupBarcodeScanning();
     setStatus(`Conectado a ${state.household.name}.`, 'success');
   } catch (error) {
     console.error(error);
