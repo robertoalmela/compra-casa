@@ -10,7 +10,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="icon.svg" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -62,7 +62,7 @@
           <form id="itemForm" class="item-form">
             <div class="input-with-icon">
               <input id="itemName" name="name" type="text" placeholder="Ej. leche" required maxlength="80" />
-              <button type="button" class="icon-btn scan-btn" id="scanBtn" title="Escanear código de barras" aria-label="Escanear código de barras">
+              <button type="button" class="icon-btn scan-btn" id="scanBtn" hidden title="Escanear código de barras" aria-label="Escanear código de barras">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="4" height="4"/><rect x="17" y="3" width="4" height="4"/><rect x="3" y="17" width="4" height="4"/><rect x="17" y="17" width="4" height="4"/><line x1="9" y1="6" x2="15" y2="6"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="7" y1="10" x2="7" y2="14"/><line x1="17" y1="10" x2="17" y2="14"/></svg>
               </button>
             </div>
@@ -87,7 +87,7 @@
               <button type="button" class="hint-btn" id="suggestionHintBtn" aria-label="¿Cómo funciona?">?</button>
             </div>
             <div id="suggestionHint" class="onboarding-hint" hidden>
-              <p>Sugiere productos cuando llevan más de 7 días sin comprarse y se han comprado al menos 2 veces. Cuanto más los uses, más afinada es la sugerencia.</p>
+              <p>Aprende cuánto suele durar cada producto entre compras y avisa cuando se acerca el momento de reponerlo. Cuantas más compras y gastos marques, más afina.</p>
             </div>
             <div id="suggestionsList" class="stack-list"></div>
           </section>
@@ -162,6 +162,12 @@
         </div>
       </article>
     </template>
+
+    <div id="scanOverlay" class="scan-overlay" hidden>
+      <video id="scanVideo" playsinline muted></video>
+      <p class="scan-hint">Enfoca el código de barras</p>
+      <button type="button" id="scanCancel" class="ghost-btn scan-cancel">Cancelar</button>
+    </div>
 
     <div id="installBanner" class="install-banner" hidden>
       <span>📲 Instala la app para acceso rápido desde el súper</span>

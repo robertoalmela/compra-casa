@@ -783,3 +783,34 @@ button:hover {
     margin-top: 0;
   }
 }
+
+.scan-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: rgba(6, 12, 16, 0.94);
+}
+
+.scan-overlay video {
+  width: min(92vw, 480px);
+  max-height: 60vh;
+  border-radius: 16px;
+  object-fit: cover;
+  background: #000;
+}
+
+.scan-hint {
+  margin: 0;
+  color: var(--muted, #9fb3bd);
+  font-size: 0.95rem;
+}
+
+.scan-cancel {
+  min-width: 140px;
+}

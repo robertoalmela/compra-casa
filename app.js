@@ -41,6 +41,10 @@ const onboardingHint = document.getElementById('onboardingHint');
 let swipeCtx = null;
 let ptrCtx = null;
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
 function setStatus(message, tone = 'info') {
   statusBanner.textContent = message;
   statusBanner.className = `status-banner is-${tone}`;
@@ -327,8 +331,8 @@ function renderSuggestions() {
       ? (priceHistory[priceHistory.length - 1].price - priceHistory[0].price).toFixed(2)
       : null;
     card.innerHTML = `
-      <strong>${product.name}</strong>
-      <span>${metrics.suggestion}</span>
+      <strong>${escapeHtml(product.name)}</strong>
+      <span>${escapeHtml(metrics.suggestion)}</span>
       <small>Último precio: ${formatCurrencyFromCents(product.lastPriceCents)}${priceTrend ? ` · tendencia: ${Number(priceTrend) >= 0 ? '+' : ''}${priceTrend} €` : ''}</small>
     `;
     suggestionsList.appendChild(card);
@@ -353,7 +357,7 @@ function renderBalances() {
     card.className = `mini-card ${entry.cents >= 0 ? 'positive' : 'negative'}`;
     const label = entry.cents >= 0 ? 'ha adelantado' : 'debe';
     card.innerHTML = `
-      <strong>${entry.name}</strong>
+      <strong>${escapeHtml(entry.name)}</strong>
       <span>${label}</span>
       <small>${formatCurrencyFromCents(Math.abs(entry.cents))}</small>
     `;
@@ -371,8 +375,8 @@ function renderBalances() {
       const card = document.createElement('article');
       card.className = 'mini-card settlement';
       card.innerHTML = `
-        <strong>${s.from}</strong>
-        <span>→ ${s.to}</span>
+        <strong>${escapeHtml(s.from)}</strong>
+        <span>→ ${escapeHtml(s.to)}</span>
         <small>${formatCurrencyFromCents(s.cents)}</small>
       `;
       balancesList.appendChild(card);
@@ -395,9 +399,9 @@ function renderEvents() {
     card.className = 'mini-card';
     const amount = event.amountCents ? ` · ${formatCurrencyFromCents(event.amountCents)}` : '';
     card.innerHTML = `
-      <strong>${event.productName}</strong>
-      <span>${event.label} · ${event.memberName} · ${formatDate(event.createdAt)}${amount}</span>
-      <small>${event.notes || 'sin notas'}</small>
+      <strong>${escapeHtml(event.productName)}</strong>
+      <span>${escapeHtml(event.label)} · ${escapeHtml(event.memberName)} · ${formatDate(event.createdAt)}${amount}</span>
+      <small>${escapeHtml(event.notes) || 'sin notas'}</small>
     `;
     eventsList.appendChild(card);
   });
@@ -406,43 +410,25 @@ function renderEvents() {
 function renderAuth() {
   if (!state.supabase) return;
   authContent.innerHTML = '';
-  if (state.user) {
-    authSection.hidden = false;
-    const div = document.createElement('div');
-    div.className = 'auth-user';
-    div.innerHTML = `
-      <span class="auth-user-email">${state.user.email}</span>
-      <button type="button" class="ghost-btn" id="logoutBtn">Cerrar sesión</button>
-    `;
-    authContent.appendChild(div);
-    div.querySelector('#logoutBtn')?.addEventListener('click', async () => {
-      await state.supabase.auth.signOut();
-      state.user = null;
-      render();
-    });
-  } else if (config.supabaseAnonKey && !config.supabaseAnonKey.includes('REPLACE_WITH')) {
-    authSection.hidden = false;
-    const form = document.createElement('form');
-    form.className = 'auth-form';
-    form.innerHTML = `
-      <input type="email" id="authEmail" placeholder="tu@email.com" required />
-      <button type="submit" class="primary-btn">Enviar enlace mágico</button>
-    `;
-    authContent.appendChild(form);
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = form.querySelector('#authEmail').value;
-      const { error } = await state.supabase.auth.signInWithOtp({ email });
-      if (error) {
-        showToast(`Error: ${error.message}`, 'error');
-      } else {
-        showToast('Enlace mágico enviado a tu correo', 'success');
-        form.innerHTML = '<p style="color:var(--muted);font-size:0.9rem">Revisa tu bandeja de entrada.</p>';
-      }
-    });
-  } else {
+  // La app funciona sin cuentas (acceso por código de hogar); solo mostramos
+  // el panel si quedara una sesión antigua abierta, para poder cerrarla.
+  if (!state.user) {
     authSection.hidden = true;
+    return;
   }
+  authSection.hidden = false;
+  const div = document.createElement('div');
+  div.className = 'auth-user';
+  div.innerHTML = `
+    <span class="auth-user-email">${escapeHtml(state.user.email)}</span>
+    <button type="button" class="ghost-btn" id="logoutBtn">Cerrar sesión</button>
+  `;
+  authContent.appendChild(div);
+  div.querySelector('#logoutBtn')?.addEventListener('click', async () => {
+    await state.supabase.auth.signOut();
+    state.user = null;
+    render();
+  });
 }
 
 function renderProducts() {
@@ -636,10 +622,11 @@ async function addItem(event) {
     .select('id, name')
     .single();
   if (error) { setStatus(`Error al guardar: ${error.message}`, 'error'); return; }
-  await state.supabase.from('shopping_events').insert({
+  const { error: eventError } = await state.supabase.from('shopping_events').insert({
     household_id: state.household.id, product_id: inserted.id,
     member_id: activeMember.id, event_type: 'created', notes: 'Producto creado',
   });
+  if (eventError) showToast('El producto se creó pero no quedó en el historial', 'warning');
   itemForm.reset();
   itemCategory.value = 'General';
   itemName.focus();
@@ -660,11 +647,12 @@ async function buyProduct(product) {
     last_bought_by_member_id: activeMember.id, last_bought_at: new Date().toISOString(),
   }).eq('id', product.id);
   if (error) { setStatus(`Error al marcar compra: ${error.message}`, 'error'); return; }
-  await state.supabase.from('shopping_events').insert({
+  const { error: eventError } = await state.supabase.from('shopping_events').insert({
     household_id: state.household.id, product_id: product.id,
     member_id: activeMember.id, event_type: 'bought',
     amount_cents: amountCents, notes: note,
   });
+  if (eventError) { setStatus(`La compra no quedó registrada en el balance: ${eventError.message}`, 'error'); return; }
   await refreshAll();
   showToast(`${product.name} comprado · ${formatCurrencyFromCents(amountCents)}`, 'success');
 }
@@ -678,10 +666,11 @@ async function consumeProduct(product) {
     last_consumed_at: new Date().toISOString(),
   }).eq('id', product.id);
   if (error) { setStatus(`Error al marcar consumo: ${error.message}`, 'error'); return; }
-  await state.supabase.from('shopping_events').insert({
+  const { error: eventError } = await state.supabase.from('shopping_events').insert({
     household_id: state.household.id, product_id: product.id,
     member_id: activeMember.id, event_type: 'consumed', notes: note,
   });
+  if (eventError) showToast('El consumo no quedó en el historial (las sugerencias pueden desajustarse)', 'warning');
   await refreshAll();
   showToast(`${product.name} gastado · vuelve a la lista de compra`, 'success');
 }
@@ -832,48 +821,62 @@ function setupPullToRefresh() {
   }, { passive: true });
 }
 
-async function setupBarcodeScanning() {
-  if (!('BarcodeDetector' in window)) {
-    scanBtn.title = 'Escanear no disponible en este navegador';
-    return;
-  }
+function setupBarcodeScanning() {
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) return;
   scanBtn.hidden = false;
+
+  const overlay = document.getElementById('scanOverlay');
+  const video = document.getElementById('scanVideo');
+  const cancelBtn = document.getElementById('scanCancel');
+  let stream = null;
+  let scanning = false;
+
+  function stopScan() {
+    scanning = false;
+    overlay.hidden = true;
+    scanBtn.classList.remove('is-scanning');
+    if (stream) { stream.getTracks().forEach((track) => track.stop()); stream = null; }
+    video.srcObject = null;
+  }
+
+  cancelBtn.addEventListener('click', stopScan);
+
   scanBtn.addEventListener('click', async () => {
-    if (scanBtn.classList.contains('is-scanning')) return;
+    if (scanning) return;
     try {
-      const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'codabar', 'itf', 'qr_code'] });
+      const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'] });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      video.srcObject = stream;
+      await video.play();
+      overlay.hidden = false;
+      scanning = true;
       scanBtn.classList.add('is-scanning');
-      showToast('Enfoca un código de barras con la cámara', 'info', 4000);
-      const barcodes = await detector.detect(videoElement());
-      scanBtn.classList.remove('is-scanning');
-      if (barcodes.length > 0) {
-        itemName.value = barcodes[0].rawValue;
-        showToast(`Código: ${barcodes[0].rawValue}`, 'success', 2000);
-      } else {
-        showToast('No se detectó ningún código', 'warning', 2000);
+      const startedAt = Date.now();
+      while (scanning && Date.now() - startedAt < 25000) {
+        try {
+          const barcodes = await detector.detect(video);
+          if (barcodes.length > 0) {
+            itemName.value = barcodes[0].rawValue;
+            stopScan();
+            showToast(`Código: ${barcodes[0].rawValue} · ponle nombre si quieres`, 'success', 2500);
+            itemName.focus();
+            itemName.select();
+            return;
+          }
+        } catch { /* frame aún no listo; seguimos intentando */ }
+        await new Promise((resolve) => setTimeout(resolve, 250));
       }
+      if (scanning) { stopScan(); showToast('No se detectó ningún código', 'warning', 2500); }
     } catch (err) {
-      scanBtn.classList.remove('is-scanning');
-      if (err.name === 'NotAllowedError' || err.name === 'NotFoundError') {
-        itemName.focus();
-        itemName.select();
-        showToast('Escribe el nombre del producto manualmente', 'warning', 2000);
+      stopScan();
+      if (err.name === 'NotAllowedError') {
+        showToast('Permiso de cámara denegado · escribe el producto a mano', 'warning', 2500);
       } else {
-        showToast(`Error: ${err.message}`, 'error');
+        showToast('No se pudo abrir la cámara', 'error', 2500);
       }
+      itemName.focus();
     }
   });
-}
-
-function videoElement() {
-  let vid = document.getElementById('barcodeVideo');
-  if (!vid) {
-    vid = document.createElement('video');
-    vid.id = 'barcodeVideo';
-    vid.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none';
-    document.body.appendChild(vid);
-  }
-  return vid;
 }
 
 function setupAuthListener() {

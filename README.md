@@ -2,6 +2,8 @@
 
 PWA/web app gratis para lista de la compra compartida entre Android y iPhone.
 
+**Estado: v1.0** — en uso diario. App publicada: https://robertoalmela.github.io/compra-casa/
+
 ## Qué hace ahora
 - productos reutilizables: no se borran al comprarlos
 - estado doble: `Comprar` / `En casa`
@@ -11,6 +13,9 @@ PWA/web app gratis para lista de la compra compartida entre Android y iPhone.
 - balance compartido tipo Tricount repartido entre todos los miembros
 - sugerencias simples de reposición según ritmo medio de consumo
 - realtime con Supabase
+- escáner de códigos de barras (Android Chrome; en iPhone el botón no aparece)
+- compartir la lista por WhatsApp/portapapeles
+- instalable como app (iconos PNG para iPhone/Android)
 - frontend estático compatible con GitHub Pages
 
 ## Stack
@@ -64,7 +69,7 @@ Con esto el frontend puede calcular:
 
 ## Ejecutar local
 ```bash
-cd /home/roberto/shared-shopping-list-app
+cd ~/Desktop/GitHub/00-active/shared-shopping-list-app
 python3 -m http.server 8137
 ```
 

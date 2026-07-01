@@ -1,7 +1,8 @@
-const CACHE_NAME = 'compra-casa-v2';
+const CACHE_NAME = 'compra-casa-v3';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js',
   './manifest.webmanifest', './config.js', './icon.svg',
+  './icon-192.png', './icon-512.png', './apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (event) => {
